@@ -1,0 +1,106 @@
+# Uranus beacon configuration
+# Frequencies for FT8 / WSPR / UR are the SSB (USB) dial frequency; the audio
+# sits at audio_offset_hz above it. APRS frequencies are FM channel centres.
+#
+# CHECK BEFORE ENABLING: Barbados is in IARU Region 2, where 144.390 MHz is the
+# APRS channel. 144.800 is the Region 1 (Europe/Africa) APRS channel, and
+# 145.570 / 144.930 / 432.800 are not APRS channels I know of here. They are
+# listed because you asked for them; make sure they are permitted by your
+# licence and band plan and that nobody else uses them.
+
+[station]
+callsign = "N0CALL"          # your callsign (UR mode and WSPR: max 6 chars, no /)
+grid = "GK03"                # 4-char Maidenhead locator
+lat = 13.10                  # APRS position (decimal degrees, + = N / E)
+lon = -59.60
+aprs_ssid = 11               # -11 = balloon/aircraft/beacon convention; 0 = none
+aprs_path = "WIDE1-1"        # keep paths short to spare the digipeaters
+aprs_symbol_table = "/"
+aprs_symbol = "-"
+aprs_comment = "Uranus beacon"
+wspr_power_dbm = 37          # REAL power you send, in dBm (37 = 5 W)
+audio_offset_hz = 1500
+
+[timing]
+gap_between_tx_s = 60        # 1 minute between transmissions in a band
+gap_between_bands_s = 180    # 3 minutes between bands
+
+[carrier_sense]              # listen-before-talk for APRS (needs S-meter via CAT)
+enabled = true
+listen_s = 2.0
+threshold_db = -40           # dB relative to S9 reported by rigctld
+retries = 3
+
+[rig_modes]                  # Hamlib mode names
+aprs = "FM"
+ft8 = "USB"                  # use "PKTUSB" if your rig needs a data mode for USB audio
+wspr = "USB"
+ur = "USB"
+
+[radio]
+backend = "dry-run"          # "dry-run" (writes WAVs) or "hamlib"
+rigctld_host = "127.0.0.1"
+rigctld_port = 4532
+audio_device = "default"     # ALSA device of the rig's USB sound card, e.g. "plughw:1,0"
+max_tx_s = 320
+
+# ------------------------------------------------------------------ 2 m
+[[band]]
+name = "2m"
+
+  [[band.slot]]
+  mode = "aprs"
+  freq_mhz = 144.390
+  enabled = true
+
+  [[band.slot]]
+  mode = "aprs"
+  freq_mhz = 145.570
+  enabled = false            # not a Region-2 APRS channel - enable only if permitted
+
+  [[band.slot]]
+  mode = "aprs"
+  freq_mhz = 144.800
+  enabled = false            # Region-1 APRS channel - enable only if permitted
+
+  [[band.slot]]
+  mode = "aprs"
+  freq_mhz = 144.930
+  enabled = false            # enable only if permitted
+
+  [[band.slot]]
+  mode = "ft8"
+  freq_mhz = 144.174
+
+  [[band.slot]]
+  mode = "wspr"
+  freq_mhz = 144.490         # usual 2 m WSPR dial is 144.489
+
+  [[band.slot]]              # experimental Uranus mode - see docs/UR-MODE.md
+  mode = "ur"
+  submode = "UR-60"
+  freq_mhz = 144.490
+  enabled = false
+
+# ------------------------------------------------------------------ 70 cm
+[[band]]
+name = "70cm"
+
+  [[band.slot]]
+  mode = "aprs"
+  freq_mhz = 432.800
+  enabled = false            # enable only if permitted
+
+  [[band.slot]]
+  mode = "ft8"
+  freq_mhz = 432.174
+
+  [[band.slot]]
+  mode = "wspr"
+  freq_mhz = 432.300
+
+  [[band.slot]]
+  mode = "ur"
+  submode = "UR-60"
+  freq_mhz = 432.300
+  enabled = false
