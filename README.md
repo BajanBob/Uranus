@@ -1,7 +1,10 @@
 # Uranus
 
 A Raspberry Pi beacon sequencer for **2 m and 70 cm**. It sends APRS, FT8,
-WSPR and an experimental new weak-signal mode called **UR**. It runs on its
+WSPR and two new weak-signal modes: **UR** (noncoherent) and **URC**
+(coherent, with Voyager-style carrier recovery). **URC beats WSJT-X FST4 by
+2.7–4 dB at the same slot length and peak power**, provided both stations
+use a GPSDO. It runs on its
 own: it switches frequency and mode through CAT control and keeps the gaps
 you set.
 
@@ -28,7 +31,8 @@ Run `python -m uranus plan` to see the exact timeline.
 * **An all-mode 2 m / 70 cm rig with CAT and a USB sound card**, for example
   an IC-9700, IC-705 or FT-991A. FT8, WSPR and UR need USB (SSB) mode; APRS
   uses FM.
-* **For UR on 70 cm,** a GPSDO or TCXO-stable rig is strongly recommended.
+* **For URC, a GPSDO-locked rig at BOTH ends** (frequency within ±0.6 Hz for
+  URC-60). UR and the WSJT-X modes work with an ordinary TCXO.
 * **Do not use `rpitx`** (Pi GPIO transmit) on 2 m or 70 cm. Its harmonics
   and spurs are far outside the rules.
 * **An SDR transmitter** (Pluto, HackRF) is possible later. It needs a proper
@@ -63,23 +67,29 @@ python3 -m uranus ur-encode "8P6AB GK03 1 1234" ur.wav --submode UR-60
 python3 -m uranus ur-decode ur.wav --submode UR-60 [--expect 8P6AB GK03]
 python3 -m uranus ur-loopback --submode UR-15 --snr -19
 python3 -m uranus ur-sim                    # sensitivity table
+python3 -m uranus urc-encode "8P6AB GK03 1 1234" urc.wav --submode URC-60
+python3 -m uranus urc-decode urc.wav --submode URC-60
+python3 -m uranus urc-loopback --submode URC-60 --snr -30
+python3 -m uranus link-budget --watts 10 --mhz 144.49 --km 200 --extra-loss 25
+python3 -m uranus link-budget --voyager
 ```
 
 The decoder takes any WAV recorded from a USB receiver with the dial on the
 beacon frequency.
 
-## Sensitivity summary (measured, 50 % decode, 2500 Hz)
+## Sensitivity summary (measured, 50 % decode, SNR in 2500 Hz)
 
-| | Single frame | 4 repeats stacked | WSJT-X equivalent |
+| Slot | UR (noncoherent) | **URC (coherent, GPSDO)** | WSJT-X FST4 |
 |---|---|---|---|
-| UR-15 | −20.0 | −23.4 | FST4-15 −20.7 / FT8 ≈ −21 |
-| UR-60 | −26.0 | −29.5 | FST4-60 −28.1 |
-| UR-120 | −29.0 | −32.5 | FST4W-120 −32.8 |
+| 15 s | −19.4 | **−24.7** | −20.7 |
+| 60 s | −25.4 | **−30.8** | −28.1 |
+| 120 s | −29.0 (sim) | **−34.1 (sim)** | −31.3 (FST4W −32.8) |
 
-UR v0.1 is a working, measured **research baseline**, not yet better than
-WSJT-X. See [docs/UR-MODE.md](docs/UR-MODE.md) and
-[docs/RESEARCH.md](docs/RESEARCH.md) for why, and for the roadmap to close
-the gap.
+The 15 s and 60 s figures come from the full audio path with blind time and
+frequency search; "(sim)" means simulation only. See
+[docs/URC-MODE.md](docs/URC-MODE.md), [docs/UR-MODE.md](docs/UR-MODE.md),
+[docs/RESEARCH.md](docs/RESEARCH.md) and
+[docs/ACHIEVEMENTS.md](docs/ACHIEVEMENTS.md).
 
 ## Operating notes
 

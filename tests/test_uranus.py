@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from uranus import aprs, fec, scheduler, urmode, wsjt
+from uranus import aprs, fec, linkbudget, scheduler, urcoherent, urmode, wsjt
 
 
 class TestFEC(unittest.TestCase):
@@ -43,6 +43,37 @@ class TestURMode(unittest.TestCase):
         self.assertEqual(urmode.decode_audio(rng.standard_normal(20 * urmode.FS), "UR-15"), [])
 
 
+class TestURC(unittest.TestCase):
+    def test_constant_envelope(self):
+        from scipy.signal import hilbert
+        y = urcoherent.modulate(urcoherent.message_to_symbols("K1ABC", "FN42"), "URC-15")
+        e = np.abs(hilbert(y.astype(float)))[3000:-3000]
+        self.assertLess(10 * np.log10(e.max() ** 2 / np.mean(e ** 2)), 0.3)
+
+    def test_audio_loopback_weak(self):
+        rng = np.random.default_rng(11)
+        sym = urcoherent.message_to_symbols("K1ABC", "FN42", 2, 321)
+        y = urcoherent.modulate(sym, "URC-15", f0=1500.3).astype(float)
+        x = np.concatenate([np.zeros(15000), y, np.zeros(6000)])
+        sigma = np.sqrt(np.mean(y ** 2) / (10 ** (-21 / 10) * 2500 * 2 / urcoherent.FS))
+        x += sigma * rng.standard_normal(len(x))
+        res = urcoherent.decode_audio(x, "URC-15", df_max=2.0)
+        self.assertTrue(any(r["call"] == "K1ABC" and r["value"] == 321 for r in res))
+
+    def test_noise_only(self):
+        rng = np.random.default_rng(12)
+        self.assertEqual(urcoherent.decode_audio(rng.standard_normal(20 * 12000), "URC-15"), [])
+
+
+class TestLinkBudget(unittest.TestCase):
+    def test_fspl(self):
+        self.assertAlmostEqual(linkbudget.fspl_db(144, 100), 115.6, delta=0.1)
+
+    def test_voyager(self):
+        pn0, _ = linkbudget.voyager_example()
+        self.assertAlmostEqual(pn0, 32.5, delta=1.0)
+
+
 class TestAPRS(unittest.TestCase):
     def test_fcs_vector(self):
         self.assertEqual(aprs.crc_x25(b"123456789"), 0x906E)
@@ -70,6 +101,8 @@ class TestScheduler(unittest.TestCase):
         wspr = scheduler.Slot("2m", "wspr", 144.49)
         self.assertEqual(scheduler.align(1000.0, ft8), 1005.5)
         self.assertEqual(scheduler.align(1000.0, wspr) % 120, 1.0)
+        urc = scheduler.Slot("2m", "urc", 144.49, submode="URC-60")
+        self.assertEqual(scheduler.align(1000.0, urc) % 60, 1.0)
 
     def test_order_and_gaps(self):
         cfg = {"timing": {"gap_between_tx_s": 60, "gap_between_bands_s": 180}}

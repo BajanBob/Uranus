@@ -82,6 +82,12 @@ name = "2m"
   freq_mhz = 144.490
   enabled = false
 
+  [[band.slot]]              # coherent Uranus mode - needs GPSDO at BOTH ends
+  mode = "urc"
+  submode = "URC-60"
+  freq_mhz = 144.490
+  enabled = false
+
 # ------------------------------------------------------------------ 70 cm
 [[band]]
 name = "70cm"
@@ -102,5 +108,11 @@ name = "70cm"
   [[band.slot]]
   mode = "ur"
   submode = "UR-60"
+  freq_mhz = 432.300
+  enabled = false
+
+  [[band.slot]]
+  mode = "urc"
+  submode = "URC-60"
   freq_mhz = 432.300
   enabled = false
