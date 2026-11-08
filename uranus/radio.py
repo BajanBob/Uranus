@@ -1,7 +1,9 @@
 """Radio back-ends.
 
 HamlibRadio - any CAT-controlled rig through `rigctld` (Hamlib), audio through
-              the rig's USB sound card with `aplay`. Recommended hardware: an
+              the rig's USB sound card (`aplay` on Linux; on Windows the
+              `sounddevice` package if installed, else the default output
+              device via winsound). Recommended hardware: an
               all-mode 2 m / 70 cm rig with USB audio (IC-9700, IC-705, FT-991A...).
               FT8/WSPR/UR need USB (SSB) mode; APRS needs FM.
 DryRunRadio - writes each transmission to a WAV and logs it. Nothing is keyed.
@@ -12,6 +14,7 @@ import os
 import shutil
 import socket
 import subprocess
+import tempfile
 import time
 import wave
 
@@ -56,8 +59,7 @@ class HamlibRadio:
         self.audio_device = audio_device
         self.ptt_lead_s = ptt_lead_s
         self.max_tx_s = max_tx_s
-        if not shutil.which("aplay"):
-            raise RuntimeError("aplay not found (sudo apt install alsa-utils)")
+        self.player = _pick_player(audio_device)
         self.sock = socket.create_connection(self.addr, timeout=3)
         self.f = self.sock.makefile("rw")
 
@@ -84,13 +86,12 @@ class HamlibRadio:
         dur = len(audio) / fs
         if dur > self.max_tx_s:
             raise RuntimeError(f"{label}: {dur:.0f} s exceeds max_tx_s")
-        tmp = f"/tmp/uranus_{os.getpid()}.wav"
+        tmp = os.path.join(tempfile.gettempdir(), f"uranus_{os.getpid()}.wav")
         write_wav(tmp, audio, fs)
         try:
             self._cmd("T 1")
             time.sleep(self.ptt_lead_s)
-            subprocess.run(["aplay", "-q", "-D", self.audio_device, tmp],
-                           check=True, timeout=dur + 10)
+            self.player(tmp, audio, fs, dur)
         finally:
             for _ in range(3):               # make very sure PTT drops
                 try:
@@ -104,3 +105,32 @@ class HamlibRadio:
         self._cmd(f"F {int(freq_hz)}")
         self._cmd(f"M {rig_mode} 0")
         time.sleep(0.3)
+
+
+def _pick_player(device):
+    """Return play(path, audio, fs, dur) for this platform."""
+    try:
+        import sounddevice as sd             # optional; lets you pick the rig's sound card
+
+        dev = None if device in ("", "default") else (int(device) if str(device).isdigit() else device)
+
+        def play_sd(path, audio, fs, dur):
+            sd.play(audio, fs, device=dev, blocking=True)
+        return play_sd
+    except Exception:                        # noqa: BLE001
+        pass
+    if os.name == "nt":
+        import winsound
+        if device not in ("", "default"):
+            log.warning("winsound plays to the Windows DEFAULT output device only; "
+                        "install 'sounddevice' to choose '%s'", device)
+
+        def play_ws(path, audio, fs, dur):
+            winsound.PlaySound(path, winsound.SND_FILENAME)
+        return play_ws
+    if not shutil.which("aplay"):
+        raise RuntimeError("no audio player: install alsa-utils (aplay) or pip install sounddevice")
+
+    def play_aplay(path, audio, fs, dur):
+        subprocess.run(["aplay", "-q", "-D", device, path], check=True, timeout=dur + 10)
+    return play_aplay

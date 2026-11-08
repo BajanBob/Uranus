@@ -10,6 +10,7 @@ Timing: FT8 starts 0.5 s after a 15 s boundary, WSPR 1 s after an even UTC
 
 import datetime as dt
 import logging
+import os
 import math
 import random
 import subprocess
@@ -113,6 +114,8 @@ def plan(cfg, slots, start, cycles=1):
 
 
 def ntp_ok():
+    if os.name == "nt":
+        return None                          # check Windows time sync yourself (see README-WINDOWS)
     try:
         r = subprocess.run(["timedatectl", "show", "-p", "NTPSynchronized", "--value"],
                            capture_output=True, text=True, timeout=5)

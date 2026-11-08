@@ -25,6 +25,8 @@ and UR for its period, so some gaps run a little longer than 1 minute.
 
 Run `python -m uranus plan` to see the exact timeline.
 
+**Windows:** download the Windows zip or see [windows/README-WINDOWS.txt](windows/README-WINDOWS.txt); double-click `windows\install.bat`.
+
 ## Hardware
 
 * **Raspberry Pi** running NTP. Accurate time is essential for FT8, WSPR and UR.

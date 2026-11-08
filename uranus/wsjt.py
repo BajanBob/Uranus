@@ -5,6 +5,8 @@ with WSJT-X (sudo apt install wsjtx). Using the reference encoders guarantees
 on-air compatibility; Uranus only turns the tones into audio and keys the rig.
 """
 
+import glob
+import os
 import re
 import shutil
 import subprocess
@@ -19,10 +21,28 @@ class EncoderMissing(RuntimeError):
     pass
 
 
-def _run(tool, message):
+def _find(tool):
+    """PATH, then $WSJTX_BIN, then the usual Windows install folders."""
     exe = shutil.which(tool)
+    if exe:
+        return exe
+    dirs = [os.environ.get("WSJTX_BIN", "")]
+    if os.name == "nt":
+        dirs += [r"C:\WSJT\wsjtx\bin"] + glob.glob(r"C:\WSJT\*\bin") + \
+                glob.glob(os.path.expandvars(r"%ProgramFiles%\wsjtx*\bin"))
+    for d in dirs:
+        for name in (tool, tool + ".exe"):
+            p = os.path.join(d, name) if d else ""
+            if p and os.path.isfile(p):
+                return p
+    return None
+
+
+def _run(tool, message):
+    exe = _find(tool)
     if not exe:
-        raise EncoderMissing(f"'{tool}' not found - install WSJT-X (sudo apt install wsjtx)")
+        raise EncoderMissing(f"'{tool}' not found - install WSJT-X "
+                             "(Linux: sudo apt install wsjtx; Windows: set WSJTX_BIN to its bin folder)")
     return subprocess.run([exe, message], capture_output=True, text=True, timeout=20).stdout
 
 
