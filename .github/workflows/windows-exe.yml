@@ -1,0 +1,64 @@
+name: Build Windows executables
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip numpy scipy sounddevice pyserial pyinstaller
+
+      - name: Run tests
+        run: python -m unittest -v tests.test_uranus
+
+      - name: Build Uranus.exe
+        run: >
+          pyinstaller --noconfirm --onefile --windowed --name Uranus
+          --add-data "config/uranus.toml;config"
+          --collect-submodules uranus
+          uranus_app.py
+
+      - name: Build WhisperMite-Setup.exe
+        run: >
+          pyinstaller --noconfirm --onefile --windowed --name WhisperMite-Setup
+          tools/whispermite/whispermite_gui.py
+
+      - name: Assemble package
+        shell: pwsh
+        run: |
+          $pkg = "Uranus-Windows-exe"
+          New-Item -ItemType Directory -Force "$pkg/config", "$pkg/docs", "$pkg/WhisperMite" | Out-Null
+          Copy-Item dist/Uranus.exe $pkg/
+          Copy-Item config/uranus.toml "$pkg/config/"
+          Copy-Item docs/*.md "$pkg/docs/"
+          Copy-Item README.md $pkg/
+          Copy-Item windows/README-WINDOWS.txt $pkg/
+          Copy-Item windows/start-rigctld.bat $pkg/
+          Copy-Item dist/WhisperMite-Setup.exe "$pkg/WhisperMite/"
+          Copy-Item tools/whispermite/README.md "$pkg/WhisperMite/"
+          Compress-Archive -Path $pkg -DestinationPath "$pkg.zip" -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Uranus-Windows-exe
+          path: Uranus-Windows-exe.zip
+
+      - name: Attach to release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Uranus-Windows-exe.zip

@@ -1,0 +1,10 @@
+[Unit]
+Description=Re-sync WhisperMite RTC from NTP via GPIO Sync button
+Wants=time-sync.target
+After=time-sync.target
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/home/pi/whispermite
+ExecStart=/usr/bin/python3 /home/pi/whispermite/whispermite.py -c /home/pi/whispermite/whispermite.ini sync

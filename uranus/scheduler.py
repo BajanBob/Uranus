@@ -14,6 +14,7 @@ import os
 import math
 import random
 import subprocess
+import threading
 import time
 import tomllib
 from dataclasses import dataclass, field
@@ -128,6 +129,7 @@ class Runner:
     def __init__(self, cfg, slots, radio):
         self.cfg, self.slots, self.radio = cfg, slots, radio
         self.st = cfg["station"]
+        self.stop = threading.Event()        # set() to stop between transmissions
 
     def audio_for(self, s):
         st = self.st
@@ -157,6 +159,9 @@ class Runner:
         while cycles is None or done < cycles:
             for _, band_slots in bands_of(self.slots):
                 for i, s in enumerate(band_slots):
+                    if self.stop.is_set():
+                        log.info("stopped")
+                        return
                     self._one(s, rigmodes, cs)
                     self._sleep_until(time.time() + gap_after(self.cfg, band_slots, i))
             done += 1
@@ -169,6 +174,8 @@ class Runner:
             return
         begin = align(time.time() + 4, s)    # 4 s to tune the rig
         self._sleep_until(begin - 3)
+        if self.stop.is_set():
+            return
         self.radio.tune(s.freq_mhz * 1e6, rigmodes[s.mode])
         if s.mode == "aprs" and cs.get("enabled", True):
             if not self._clear(cs):
@@ -187,10 +194,9 @@ class Runner:
             time.sleep(random.uniform(3, 10))
         return False
 
-    @staticmethod
-    def _sleep_until(t):
-        while True:
+    def _sleep_until(self, t):
+        while not self.stop.is_set():
             r = t - time.time()
             if r <= 0:
                 return
-            time.sleep(min(r, 0.5) if r > 0.05 else r)
+            self.stop.wait(min(r, 0.5) if r > 0.05 else r)

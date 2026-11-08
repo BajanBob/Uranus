@@ -1,0 +1,10 @@
+[Unit]
+Description=Weekly WhisperMite time re-sync
+
+[Timer]
+# Starts a few minutes early; the script waits for the next 10-minute mark.
+OnCalendar=Sun *-*-* 06:53:00 UTC
+Persistent=false
+
+[Install]
+WantedBy=timers.target
