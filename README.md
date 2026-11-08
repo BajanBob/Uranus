@@ -25,7 +25,7 @@ and UR for its period, so some gaps run a little longer than 1 minute.
 
 Run `python -m uranus plan` to see the exact timeline.
 
-**Windows:** download the Windows zip or see [windows/README-WINDOWS.txt](windows/README-WINDOWS.txt); double-click `windows\install.bat`.
+**Windows:** download `Uranus-Windows-exe.zip` from the latest Release or Actions build and double-click `Uranus.exe` (no Python needed). From source: download the Windows zip or see [windows/README-WINDOWS.txt](windows/README-WINDOWS.txt); double-click `windows\install.bat`.
 
 ## Hardware
 

@@ -1,6 +1,12 @@
 URANUS ON WINDOWS
 =================
 
+EASIEST: download Uranus-Windows-exe.zip, unzip it and double-click Uranus.exe.
+No Python needed. The buttons are numbered: 1. Edit settings, 2. Show plan,
+3. Dry run, then ON AIR. WhisperMite-Setup.exe is in the WhisperMite folder.
+
+FROM SOURCE (needs Python):
+
 1. Install Python 3.11 or newer from python.org (tick "Add python.exe to PATH").
 2. Double-click windows\install.bat  (installs numpy, scipy, sounddevice, pyserial
    and runs the 17 self-tests).
