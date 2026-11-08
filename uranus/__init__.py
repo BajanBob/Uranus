@@ -1,4 +1,4 @@
 """Uranus - multi-mode VHF/UHF beacon sequencer (APRS / FT8 / WSPR) and the
 experimental UR weak-signal mode."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
