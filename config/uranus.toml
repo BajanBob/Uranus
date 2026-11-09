@@ -23,8 +23,8 @@ wspr_power_dbm = 37          # REAL power you send, in dBm (37 = 5 W)
 audio_offset_hz = 1500
 
 [receive]                    # listen mode
-mode = "urc"                 # "urc" or "ur"
-submode = "URC-60"
+mode = "pumpkin"             # "pumpkin" (SSB), "cucumber" (FM) or "ur"
+submode = "PUMPKIN-60"
 dial_mhz = 144.490
 audio_offset_hz = 1500
 audio_device = "default"     # rig's USB audio INPUT (see list-audio-devices)
@@ -33,7 +33,7 @@ rtl_ppm = 0                  # RTL-SDR frequency correction, parts per million
 rtl_gain = 40                # RTL-SDR gain, dB
 
 [reporting]
-pskreporter = false          # upload your URC/UR decodes to PSK Reporter
+pskreporter = false          # upload your Pumpkin/UR decodes to PSK Reporter
 pskreporter_test_server = true   # true = PSK Reporter's test port; set false when you are happy
 pskreporter_contact = ""     # optional e-mail PSK Reporter asks query clients to supply
 online_minutes = 30          # map: blue if heard within this many minutes, else red
@@ -108,9 +108,15 @@ active = true                # switch the whole band on/off (Station setup does 
   enabled = false
 
   [[band.slot]]              # coherent Uranus mode - needs GPSDO at BOTH ends
-  mode = "urc"
-  submode = "URC-60"
+  mode = "pumpkin"
+  submode = "PUMPKIN-60"
   freq_mhz = 144.490
+  enabled = false
+
+  [[band.slot]]              # Cucumber on FM: agree a simplex channel locally before enabling
+  mode = "cucumber"
+  submode = "CUCUMBER-60"
+  freq_mhz = 145.580
   enabled = false
 
 # ------------------------------------------------------------------ 1.25 m (220 MHz)
@@ -125,8 +131,8 @@ active = false               # switch on when your 1.25 m station is ready
 transverter_lo_mhz = 0.0      # 0 = rig tunes 222 MHz directly
 
   [[band.slot]]
-  mode = "urc"
-  submode = "URC-60"
+  mode = "pumpkin"
+  submode = "PUMPKIN-60"
   freq_mhz = 222.130
   enabled = true
 
@@ -135,6 +141,12 @@ transverter_lo_mhz = 0.0      # 0 = rig tunes 222 MHz directly
   submode = "UR-60"
   freq_mhz = 222.130
   enabled = false
+
+  [[band.slot]]              # Cucumber: weak-signal beacon for FM-only 220 radios
+  mode = "cucumber"
+  submode = "CUCUMBER-60"
+  freq_mhz = 223.420         # FM simplex segment, clear of the 223.500 calling frequency
+  enabled = true
 
 # ------------------------------------------------------------------ 70 cm
 [[band]]
@@ -161,7 +173,13 @@ active = true
   enabled = false
 
   [[band.slot]]
-  mode = "urc"
-  submode = "URC-60"
+  mode = "pumpkin"
+  submode = "PUMPKIN-60"
   freq_mhz = 432.300
+  enabled = false
+
+  [[band.slot]]              # Cucumber on FM: agree a simplex channel locally before enabling
+  mode = "cucumber"
+  submode = "CUCUMBER-60"
+  freq_mhz = 433.500
   enabled = false

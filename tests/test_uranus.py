@@ -4,7 +4,7 @@ import numpy as np
 
 import struct
 
-from uranus import aprs, fec, geo, linkbudget, mapgen, pskreporter, scheduler, urcoherent, urmode, wsjt
+from uranus import aprs, cucumber, fec, geo, linkbudget, mapgen, pskreporter, scheduler, pumpkin, urmode, wsjt
 
 
 class TestFEC(unittest.TestCase):
@@ -45,26 +45,52 @@ class TestURMode(unittest.TestCase):
         self.assertEqual(urmode.decode_audio(rng.standard_normal(20 * urmode.FS), "UR-15"), [])
 
 
-class TestURC(unittest.TestCase):
+class TestPumpkin(unittest.TestCase):
     def test_constant_envelope(self):
         from scipy.signal import hilbert
-        y = urcoherent.modulate(urcoherent.message_to_symbols("K1ABC", "FN42"), "URC-15")
+        y = pumpkin.modulate(pumpkin.message_to_symbols("K1ABC", "FN42"), "PUMPKIN-15")
         e = np.abs(hilbert(y.astype(float)))[3000:-3000]
         self.assertLess(10 * np.log10(e.max() ** 2 / np.mean(e ** 2)), 0.3)
 
     def test_audio_loopback_weak(self):
         rng = np.random.default_rng(11)
-        sym = urcoherent.message_to_symbols("K1ABC", "FN42", 2, 321)
-        y = urcoherent.modulate(sym, "URC-15", f0=1500.3).astype(float)
+        sym = pumpkin.message_to_symbols("K1ABC", "FN42", 2, 321)
+        y = pumpkin.modulate(sym, "PUMPKIN-15", f0=1500.3).astype(float)
         x = np.concatenate([np.zeros(15000), y, np.zeros(6000)])
-        sigma = np.sqrt(np.mean(y ** 2) / (10 ** (-21 / 10) * 2500 * 2 / urcoherent.FS))
+        sigma = np.sqrt(np.mean(y ** 2) / (10 ** (-21 / 10) * 2500 * 2 / pumpkin.FS))
         x += sigma * rng.standard_normal(len(x))
-        res = urcoherent.decode_audio(x, "URC-15", df_max=2.0)
+        res = pumpkin.decode_audio(x, "PUMPKIN-15", df_max=2.0)
         self.assertTrue(any(r["call"] == "K1ABC" and r["value"] == 321 for r in res))
 
     def test_noise_only(self):
         rng = np.random.default_rng(12)
-        self.assertEqual(urcoherent.decode_audio(rng.standard_normal(20 * 12000), "URC-15"), [])
+        self.assertEqual(pumpkin.decode_audio(rng.standard_normal(20 * 12000), "PUMPKIN-15"), [])
+
+
+class TestCucumber(unittest.TestCase):
+    def test_fm_link_below_voice_threshold(self):
+        rng = np.random.default_rng(21)
+        sym = cucumber.message_to_symbols("8P5AB", "GK03", 3, 999)
+        y = cucumber.modulate(sym, "CUCUMBER-15").astype(float)
+        a = np.concatenate([np.zeros(15000), y, np.zeros(6000)])
+        x = cucumber.fm_channel(a, -6.0, rng)          # 16 dB below where FM voice is readable
+        res = cucumber.decode_audio(x, "CUCUMBER-15")
+        self.assertTrue(any(r["call"] == "8P5AB" and r["value"] == 999 for r in res))
+        self.assertNotIn("fade_db", res[0])
+
+    def test_legacy_urc_names(self):
+        import tomllib
+        t = open("config/uranus.toml", encoding="utf-8").read()
+        t = t.replace('mode = "pumpkin"\n  submode = "PUMPKIN-60"\n  freq_mhz = 144.490\n  enabled = false',
+                      'mode = "urc"\n  submode = "URC-60"\n  freq_mhz = 144.490\n  enabled = true', 1)
+        import os, tempfile
+        fd, path = tempfile.mkstemp(suffix=".toml")
+        os.write(fd, t.replace("N0CALL", "8P5AB").encode())
+        os.close(fd)
+        _, slots = scheduler.load_config(path)
+        os.unlink(path)
+        s = [x for x in slots if x.freq_mhz == 144.49 and x.enabled and x.mode != "wspr"][0]
+        self.assertEqual((s.mode, s.submode), ("pumpkin", "PUMPKIN-60"))
 
 
 class TestLinkBudget(unittest.TestCase):
@@ -91,7 +117,7 @@ class TestGeo(unittest.TestCase):
 
 class TestPSKReporter(unittest.TestCase):
     def test_ipfix_structure(self):
-        sp = [{"call": "K1ABC", "grid": "FN42", "snr": -27.3, "freq_hz": 144491500, "mode": "URC", "time": 1_800_000_000}]
+        sp = [{"call": "K1ABC", "grid": "FN42", "snr": -27.3, "freq_hz": 144491500, "mode": "PUMPKIN", "time": 1_800_000_000}]
         pkt = pskreporter.build_packet("8P5AB", "GK03ec", sp, 0, 1234)
         ver, length = struct.unpack(">HH", pkt[:4])
         self.assertEqual((ver, length), (10, len(pkt)))
@@ -103,13 +129,13 @@ class TestPSKReporter(unittest.TestCase):
             pos += slen
         self.assertEqual(pos, len(pkt))
         self.assertEqual(sets, [3, 2, 0x9992, 0x9993])
-        self.assertIn(b"URC", pkt)
+        self.assertIn(b"PUMPKIN", pkt)
 
 
 class TestMap(unittest.TestCase):
     def test_aggregate_and_render(self):
         st = mapgen.aggregate(mapgen.demo_spots(), "GK03ec")
-        self.assertEqual(len(st), 13)                       # SAMPLE8 is on both 2 m and 70 cm
+        self.assertEqual(len(st), 14)                       # SAMPLE8 is on both 2 m and 70 cm
         self.assertIn("1.25m", {s["band"] for s in st})
         self.assertEqual({s["band"] for s in st if s["call"] == "SAMPLE8"}, {"2m", "70cm"})
         for s in st:
@@ -148,7 +174,7 @@ class TestBandsRadiosSDR(unittest.TestCase):
         self.assertEqual(pr.band_of(432_300_000), "70cm")
 
     def test_transverter_offset(self):
-        s = scheduler.Slot("1.25m", "urc", 222.130, lo_mhz=194.0)
+        s = scheduler.Slot("1.25m", "pumpkin", 222.130, lo_mhz=194.0)
         self.assertAlmostEqual(s.rig_hz, 28.130e6, delta=1)
 
     def test_config_editor_keeps_disabled_slots(self):
@@ -210,8 +236,8 @@ class TestScheduler(unittest.TestCase):
         wspr = scheduler.Slot("2m", "wspr", 144.49)
         self.assertEqual(scheduler.align(1000.0, ft8), 1005.5)
         self.assertEqual(scheduler.align(1000.0, wspr) % 120, 1.0)
-        urc = scheduler.Slot("2m", "urc", 144.49, submode="URC-60")
-        self.assertEqual(scheduler.align(1000.0, urc) % 60, 1.0)
+        pk = scheduler.Slot("2m", "pumpkin", 144.49, submode="PUMPKIN-60")
+        self.assertEqual(scheduler.align(1000.0, pk) % 60, 1.0)
 
     def test_order_and_gaps(self):
         cfg = {"timing": {"gap_between_tx_s": 60, "gap_between_bands_s": 180}}

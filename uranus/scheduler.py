@@ -19,12 +19,13 @@ import time
 import tomllib
 from dataclasses import dataclass, field
 
-from . import aprs, urcoherent, urmode, wsjt
+from . import aprs, cucumber, pumpkin, urmode, wsjt
 
 log = logging.getLogger("uranus.scheduler")
 
 DURATION = {"ft8": 12.64, "wspr": 110.6}
-RIG_MODE_DEFAULT = {"aprs": "FM", "ft8": "USB", "wspr": "USB", "ur": "USB", "urc": "USB"}
+RIG_MODE_DEFAULT = {"aprs": "FM", "ft8": "USB", "wspr": "USB", "ur": "USB", "pumpkin": "USB", "cucumber": "FM"}
+LEGACY = {"urc": "pumpkin"}
 
 
 @dataclass
@@ -47,7 +48,7 @@ class Slot:
 
     @property
     def label(self):
-        m = self.submode if self.mode in ("ur", "urc") else self.mode.upper()
+        m = self.submode if self.mode in ("ur", "pumpkin", "cucumber") else self.mode.upper()
         return f"{self.band}_{m}_{self.freq_mhz:.3f}"
 
 
@@ -61,6 +62,9 @@ def load_config(path):
         for s in band["slot"]:
             known = {k: s[k] for k in ("mode", "freq_mhz", "enabled", "submode",
                                        "msg_type", "msg_value", "note") if k in s}
+            known["mode"] = LEGACY.get(known.get("mode"), known.get("mode"))
+            if str(known.get("submode", "")).startswith("URC-"):          # names before v0.6
+                known["submode"] = "PUMPKIN-" + known["submode"].split("-")[1]
             slots.append(Slot(band=band["name"], lo_mhz=float(band.get("transverter_lo_mhz", 0.0)), **known))
     st = cfg["station"]
     if st.get("callsign", "N0CALL").upper() in ("N0CALL", "NOCALL", ""):
@@ -71,8 +75,10 @@ def load_config(path):
 def slot_duration(slot, cfg=None):
     if slot.mode == "ur":
         return urmode.NSYM * urmode.SUBMODES[slot.submode]
-    if slot.mode == "urc":
-        return (urcoherent.NSYM + 1) * urcoherent.SUBMODES[slot.submode]
+    if slot.mode == "pumpkin":
+        return (pumpkin.NSYM + 1) * pumpkin.SUBMODES[slot.submode]
+    if slot.mode == "cucumber":
+        return (cucumber.NSYM + 1) * cucumber.SUBMODES[slot.submode]
     if slot.mode == "aprs":
         return 1.2                          # typical; actual length comes from the audio
     return DURATION[slot.mode]
@@ -86,8 +92,10 @@ def align(t, slot):
         period, offset = 15, 0.5
     elif slot.mode == "wspr":
         period, offset = 120, 1.0
-    elif slot.mode == "urc":
-        period, offset = urcoherent.PERIODS[slot.submode], 1.0
+    elif slot.mode == "pumpkin":
+        period, offset = pumpkin.PERIODS[slot.submode], 1.0
+    elif slot.mode == "cucumber":
+        period, offset = cucumber.PERIODS[slot.submode], 1.0
     else:
         period, offset = urmode.PERIODS[slot.submode], 1.0
     start = math.ceil((t - offset) / period) * period + offset
@@ -152,9 +160,12 @@ class Runner:
             return wsjt.ft8_audio(f"CQ {st['callsign']} {st['grid']}", off), wsjt.FS
         if s.mode == "wspr":
             return wsjt.wspr_audio(st["callsign"], st["grid"], int(st["wspr_power_dbm"]), off), wsjt.FS
-        if s.mode == "urc":
-            sym = urcoherent.message_to_symbols(st["callsign"], st["grid"], s.msg_type, s.msg_value)
-            return urcoherent.modulate(sym, s.submode, f0=off), urcoherent.FS
+        if s.mode == "cucumber":
+            sym = cucumber.message_to_symbols(st["callsign"], st["grid"], s.msg_type, s.msg_value)
+            return cucumber.modulate(sym, s.submode), cucumber.FS
+        if s.mode == "pumpkin":
+            sym = pumpkin.message_to_symbols(st["callsign"], st["grid"], s.msg_type, s.msg_value)
+            return pumpkin.modulate(sym, s.submode, f0=off), pumpkin.FS
         tones = urmode.message_to_tones(st["callsign"], st["grid"], s.msg_type, s.msg_value)
         return urmode.modulate(tones, s.submode, f0=off), urmode.FS
 

@@ -1,7 +1,7 @@
 """Radio and SDR profiles shown in the Station setup window.
 
 Each profile says what the equipment can do for Uranus: bands, whether it
-transmits SSB (needed for FT8/WSPR/UR/URC) or FM only (APRS), whether it has a
+transmits SSB (needed for FT8/WSPR/UR/Pumpkin) or FM only (APRS), whether it has a
 built-in USB sound card, and which Uranus backend drives it. `hamlib_name`
 is matched against `rigctl -l` to find the Hamlib model number, so no model
 numbers are hard-coded. Specifications change between model years and
@@ -16,7 +16,7 @@ class Profile:
     name: str
     kind: str                  # transceiver, handheld, mobile, transverter, sdr-rx, sdr-trx, generic
     bands: list                # of "2m", "1.25m", "70cm"
-    ssb: bool                  # can transmit USB/SSB (FT8, WSPR, UR, URC)
+    ssb: bool                  # can transmit USB/SSB (FT8, WSPR, UR, Pumpkin)
     usb_audio: str             # "built-in", "external interface", "n/a"
     backend: str               # hamlib, hackrf, rtl_fm, audio-only
     hamlib_name: str = ""
@@ -26,9 +26,10 @@ class Profile:
     def help(self):
         bands = ", ".join({"2m": "2 m", "1.25m": "1.25 m (220 MHz)", "70cm": "70 cm"}[b] for b in self.bands)
         if self.kind == "sdr-rx":
-            modes = "Receive only: decodes URC/UR (and feeds WSJT-X) but cannot transmit"
+            modes = "Receive only: decodes Pumpkin/UR (and feeds WSJT-X) but cannot transmit"
         else:
-            modes = "SSB modes (FT8, WSPR, UR, URC) and FM (APRS)" if self.ssb else "FM only: APRS, not the SSB weak-signal modes"
+            modes = ("SSB modes (FT8, WSPR, UR, Pumpkin) and FM (APRS, Cucumber)" if self.ssb
+                     else "FM only: APRS and Cucumber (the FM weak-signal mode), not the SSB modes")
         audio = {"built-in": "Built-in USB sound card and CAT over one cable.",
                  "external interface": "Needs an audio interface (e.g. Digirig Mobile or SignaLink USB) for data.",
                  "n/a": "Audio is produced in software (SDR)."}[self.usb_audio]
@@ -40,8 +41,8 @@ PROFILES = [
             "Any Hamlib-supported all-mode rig. Choose this if your radio is not listed."),
     # ---- all-mode transceivers (SSB) ----
     Profile("Icom IC-9700", "transceiver", ["2m", "70cm"], True, "built-in", "hamlib", "IC-9700",
-            "All-mode 2 m / 70 cm / 23 cm base station. Excellent for URC; accepts a 10 MHz GPS reference "
-            "for frequency lock, which URC needs at both ends. No 1.25 m."),
+            "All-mode 2 m / 70 cm / 23 cm base station. Excellent for Pumpkin; accepts a 10 MHz GPS reference "
+            "for frequency lock, which Pumpkin needs at both ends. No 1.25 m."),
     Profile("Icom IC-705", "transceiver", ["2m", "70cm"], True, "built-in", "hamlib", "IC-705",
             "Portable HF to 70 cm, 10 W. Also a good IF rig for a 222 MHz transverter."),
     Profile("Icom IC-905", "transceiver", ["2m", "70cm"], True, "built-in", "hamlib", "IC-905",
@@ -56,16 +57,16 @@ PROFILES = [
     # ---- 1.25 m (220 MHz) capable, FM ----
     Profile("Kenwood TH-D75A (US)", "handheld", ["2m", "1.25m", "70cm"], False, "external interface", "audio-only", "",
             "Tri-band handheld with built-in APRS. US version transmits FM on 222 MHz. SSB is receive only, "
-            "so use it for 1.25 m APRS, not for URC transmit."),
+            "so use it for 1.25 m APRS and Cucumber, not for Pumpkin transmit."),
     Profile("Kenwood TH-D74A (US)", "handheld", ["2m", "1.25m", "70cm"], False, "external interface", "audio-only", "",
-            "Earlier tri-band APRS handheld, 5 W on 222 MHz in the US version. FM transmit only."),
+            "Earlier tri-band APRS handheld, 5 W on 222 MHz in the US version. FM transmit only: APRS and Cucumber."),
     Profile("Yaesu VX-6R / VX-7R (US)", "handheld", ["2m", "1.25m", "70cm"], False, "external interface", "audio-only", "",
             "Tri-band FM handhelds; low power on 222 MHz. APRS via an audio interface."),
     Profile("Alinco DR-235T", "mobile", ["1.25m"], False, "external interface", "audio-only", "",
-            "222 MHz FM mobile (about 25 W). Good for 1.25 m APRS with an interface on its data/mic port."),
+            "222 MHz FM mobile (about 25 W). Good for 1.25 m APRS and Cucumber with an interface on its data port."),
     Profile("AnyTone AT-D578UV III Plus (220 version)", "mobile", ["2m", "1.25m", "70cm"], False,
             "external interface", "audio-only", "",
-            "Tri-band FM/DMR mobile; transmit on 222 MHz only in versions sold for Region 2. FM APRS only."),
+            "Tri-band FM/DMR mobile; transmit on 222 MHz only in versions sold for Region 2. FM: APRS and Cucumber."),
     Profile("BTECH UV-5X3", "handheld", ["2m", "1.25m", "70cm"], False, "external interface", "audio-only", "",
             "Low-cost tri-band FM handheld. Fine for experiments; check spurious emissions before long use."),
     # ---- 222 MHz transverters (SSB on 1.25 m) ----
@@ -78,7 +79,7 @@ PROFILES = [
             "band-pass filter, normally an amplifier. Uranus keeps its gain low by default."),
     Profile("RTL-SDR v3 / v4 (receive only)", "sdr-rx", ["2m", "1.25m", "70cm"], False, "n/a", "rtl_fm", "",
             "Cheap receive-only dongle for listen mode (source = rtl_fm). Use a TCXO model and set rtl_ppm; "
-            "URC needs the frequency within about 0.6 Hz, so a GPS-locked SDR is better for URC-60."),
+            "Pumpkin needs the frequency within about 0.6 Hz, so a GPS-locked SDR is better for PUMPKIN-60."),
     Profile("ADALM-Pluto (SDR)", "sdr-trx", ["70cm"], True, "n/a", "audio-only", "",
             "Official range 325 MHz to 3.8 GHz, so 70 cm out of the box; 2 m and 1.25 m need the widely "
             "used range extension. Not yet driven directly by Uranus: use it through SDR software with a "

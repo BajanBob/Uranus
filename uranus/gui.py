@@ -125,7 +125,8 @@ class App(tk.Tk):
         bar2 = ttk.Frame(self)
         bar2.pack(fill="x", padx=6)
         for text, cmd in [
-            ("URC demo (-29 dB)", lambda: self.cli(["urc-loopback", "--submode", "URC-60", "--snr", "-29"])),
+            ("Pumpkin demo (-29 dB)", lambda: self.cli(["pumpkin-loopback", "--submode", "PUMPKIN-60", "--snr", "-29"])),
+            ("Cucumber demo (FM)", lambda: self.cli(["cucumber-loopback", "--submode", "CUCUMBER-15", "--cnr", "-8"])),
             ("UR demo (-19 dB)", lambda: self.cli(["ur-loopback", "--submode", "UR-15", "--snr", "-19"])),
             ("Link budget", lambda: self.cli(["link-budget", "--watts", "10", "--mhz", "144.49",
                                               "--km", "200", "--extra-loss", "25",
@@ -139,11 +140,13 @@ class App(tk.Tk):
             b = ttk.Button(bar2, text=text, command=cmd)
             b.pack(side="left", padx=3, pady=3)
             Tooltip(b, {
-                "URC demo (-29 dB)": "Encode a URC-60 frame, bury it 29 dB under the noise and decode it.",
+                "Pumpkin demo (-29 dB)": "Encode a PUMPKIN-60 frame, bury it 29 dB under the noise and decode it.",
+                "Cucumber demo (FM)": "Send a CUCUMBER-15 frame through a simulated FM radio link 8 dB below the noise "
+                                      "in the channel (voice would need +10 dB) and decode it.",
                 "UR demo (-19 dB)": "The same test for the noncoherent UR-15 mode.",
                 "Link budget": "Signal margin for every mode on a sample 200 km 2 m path.",
                 "400 km example": "Signal margin on a reference 400 km beyond-horizon 2 m path.",
-                "Listen (decode)": "Decode URC/UR from the rig or RTL-SDR every slot and log who you hear.",
+                "Listen (decode)": "Decode Pumpkin/UR from the rig or RTL-SDR every slot and log who you hear.",
                 "Station map": "Map of stations heard and stations that heard you (PSK Reporter), by band.",
                 "Map demo": "The station map with clearly labelled sample stations.",
                 "Open output folder": "Open the folder with WAV files, spots and the map.",
@@ -266,7 +269,7 @@ class App(tk.Tk):
             finally:
                 if rep:
                     rep.flush()
-        self.print("\n> listen: decoding URC from the rig; spots go to out/spots.jsonl\n")
+        self.print("\n> listen: decoding Pumpkin from the rig; spots go to out/spots.jsonl\n")
         self.start(go, "LISTENING - decodes appear below. Press Stop to end.", "#cfe3ff")
 
     def stop(self):
@@ -384,10 +387,10 @@ class SetupWindow(tk.Toplevel):
 
         bf = ttk.Frame(f)
         active = {b["name"]: b.get("active", True) for b in self.cfg.get("band", [])}
-        band_tips = {"2m": "144-148 MHz. APRS 144.390, FT8 144.174, WSPR 144.490, URC.",
+        band_tips = {"2m": "144-148 MHz. APRS 144.390, FT8 144.174, WSPR 144.490, Pumpkin.",
                      "1.25m": "222-225 MHz (220 MHz band). ITU Region 2 only; Barbados 222-225 MHz, check your licence. "
                               "Quiet noise floor; needs a transverter, a tri-band FM rig (APRS) or an SDR.",
-                     "70cm": "420-450 MHz. FT8 432.174, WSPR 432.300, URC."}
+                     "70cm": "420-450 MHz. FT8 432.174, WSPR 432.300, Pumpkin."}
         for b in ("2m", "1.25m", "70cm"):
             self.v["band_" + b] = tk.BooleanVar(value=bool(active.get(b, False)))
             c = ttk.Checkbutton(bf, text={"2m": "2 m", "1.25m": "1.25 m (220)", "70cm": "70 cm"}[b], variable=self.v["band_" + b])

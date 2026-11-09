@@ -6,7 +6,7 @@
     SNR(2500 Hz) = P/N0 - 34.0   (the yardstick WSJT-X and Uranus quote)
 
 This makes the trade explicit: a mode with threshold S (dB in 2500 Hz)
-needs P/N0 >= S + 34. URC-60 at -30.8 dB needs only ~3 dB-Hz.
+needs P/N0 >= S + 34. PUMPKIN-60 at -30.8 dB needs only ~3 dB-Hz.
 """
 
 import math
@@ -19,8 +19,9 @@ K_DBW = -228.6                   # Boltzmann constant, dBW/K/Hz
 SKY_K = {144: 400.0, 432: 60.0}
 
 THRESHOLDS = {                   # 50 % decode, dB in 2500 Hz
+    "FM voice (approx.)": 17.0, "CUCUMBER-15": -4.0, "CUCUMBER-60": -6.0,
     "FT8": -21.0, "WSPR": -31.4, "FST4-60": -28.1, "FST4W-120": -32.8,
-    "UR-15": -19.4, "UR-60": -25.4, "URC-15": -24.7, "URC-60": -30.8, "URC-120": -33.8,
+    "UR-15": -19.4, "UR-60": -25.4, "PUMPKIN-15": -24.7, "PUMPKIN-60": -30.8, "PUMPKIN-120": -33.8,
 }
 
 

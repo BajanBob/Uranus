@@ -41,7 +41,7 @@ of dB.
 | Strong channel coding, soft decisions | **Yes** | K=9 r=1/3 conv + soft Viterbi; LDPC/polar on roadmap |
 | A-priori decoding (known callsign) | Yes, a little (+0.7 dB measured) | `--expect CALL GRID` |
 | Stacking repeats / multichannel correlation | **Yes** (+3.4 dB for 4×, measured) | LLR summation; multi-receiver next |
-| Coherent detection with GPSDO | **Yes: +2.7 to +4.0 dB over FST4, measured** | **Built: URC mode** |
+| Coherent detection with GPSDO | **Yes: +2.7 to +4.0 dB over FST4, measured** | **Built: Pumpkin mode** |
 | Accurate time sync (NTP/GPS) | Required | Scheduler checks NTP |
 | Cognitive radio / spectrum awareness | Yes, for **not causing interference** | Listen-before-talk on APRS via S-meter |
 | CNN / one-class classifiers to find unknown signals | Not for decoding your own known signal; useful for **monitoring** the band | Not built — good later research add-on with an RTL-SDR |

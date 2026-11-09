@@ -27,7 +27,7 @@ you hover over it.
 | Airspy R2 / Mini (receive) | 2 m, 1.25 m, 70 cm | Receive only | n/a | audio-only |
 
 *FM only* radios can send APRS but not the SSB weak-signal modes (FT8,
-WSPR, UR, URC). Specifications vary by model year and regional version, so
+WSPR, UR, Pumpkin). Specifications vary by model year and regional version, so
 always check the radio's manual. To add a radio, add a `Profile` to
 `uranus/radios.py`.
 
@@ -51,8 +51,8 @@ always check the radio's manual. To add a radio, add a `Profile` to
 
 * **RTL-SDR:** set `[receive] source = "rtl_fm"` and Uranus records USB audio
   straight from the dongle with `rtl_fm` (install the `rtl-sdr` tools). Set
-  `rtl_ppm` for your dongle's frequency error. URC needs the frequency within
-  about 0.6 Hz (URC-60), so use a TCXO or GPS-locked SDR for URC.
+  `rtl_ppm` for your dongle's frequency error. Pumpkin needs the frequency within
+  about 0.6 Hz (PUMPKIN-60), so use a TCXO or GPS-locked SDR for Pumpkin.
 * **SDRplay, Airspy, Pluto and others:** run their own software in USB mode and
   send the audio to Uranus through a virtual audio cable, choosing that cable
   as "Audio from radio".
@@ -60,7 +60,7 @@ always check the radio's manual. To add a radio, add a `Profile` to
 ### Transmit (experimental)
 
 * **HackRF One:** set `backend = "hackrf"`. Uranus streams 8-bit I/Q to
-  `hackrf_transfer`: USB for FT8, WSPR, UR and URC, FM (3 kHz deviation) for
+  `hackrf_transfer`: USB for FT8, WSPR, UR and Pumpkin, FM (3 kHz deviation) for
   APRS. The carrier sits 200 kHz from the HackRF's centre frequency so its
   DC leak stays outside the signal. In testing, the unwanted lower sideband
   was suppressed and everything else was 65 dB down.

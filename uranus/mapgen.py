@@ -18,7 +18,7 @@ import time
 from . import geo, propagation
 
 DEMO_NOTE = "SAMPLE DATA - illustrative stations, not real spots"
-F2M, F125, F70 = 144_491_500, 222_131_500, 432_301_500
+F2M, F125, F125FM, F70 = 144_491_500, 222_131_500, 223_420_000, 432_301_500
 
 
 def aggregate(spots, home_grid, online_min=30, now=None, home_latlon=None, ant_heights=(10.0, 10.0)):
@@ -92,12 +92,14 @@ def demo_spots(now=None):
         ("SAMPLE10", -23.5, -46.6, F2M, -15, [6], "rx", 7.5, 0.9),
         ("SAMPLE11", 13.9, -61.0, F125, -18, [5, 10, 15], "rx", 0.5, 0.02),
         ("SAMPLE12", 10.65, -61.5, F125, -26, [11], "heard", None, None),
+        ("SAMPLE13", 12.1, -61.7, F125FM, 4, [3, 8], "rx", None, None),
     ]
     out = []
     for call, lat, lon, f, snr, agos, d, fade, spread in places:
         for i, ago in enumerate(agos):
             sp = {"time": int(now - ago * 60), "call": call, "grid": geo.latlon_to_grid(lat, lon),
-                  "snr": snr - (i % 2), "freq_hz": f, "mode": "URC", "direction": d}
+                  "snr": snr - (i % 2), "freq_hz": f, "mode": "CUCUMBER" if f == F125FM else "PUMPKIN",
+                  "direction": d}
             if fade is not None:
                 sp.update(fade_db=fade, spread_hz=spread)
             out.append(sp)

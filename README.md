@@ -1,8 +1,9 @@
 # Uranus
 
-A Raspberry Pi beacon sequencer for **2 m and 70 cm**. It sends APRS, FT8,
-WSPR and two new weak-signal modes: **UR** (noncoherent) and **URC**
-(coherent, with pilot-aided carrier recovery). **URC beats WSJT-X FST4 by
+A Raspberry Pi and PC beacon sequencer for **2 m, 1.25 m (220 MHz) and 70 cm**. It sends APRS, FT8,
+WSPR and three new weak-signal modes: **UR** (noncoherent), **Pumpkin**
+(coherent, with pilot-aided carrier recovery; formerly URC) and **Cucumber**
+(Pumpkin for FM radios). **Pumpkin beats WSJT-X FST4 by
 2.7–4 dB at the same slot length and peak power**, provided both stations
 use a GPSDO. It runs on its
 own: it switches frequency and mode through CAT control and keeps the gaps
@@ -33,8 +34,8 @@ Run `python -m uranus plan` to see the exact timeline.
 * **An all-mode 2 m / 70 cm rig with CAT and a USB sound card**, for example
   an IC-9700, IC-705 or FT-991A. FT8, WSPR and UR need USB (SSB) mode; APRS
   uses FM.
-* **For URC, a GPSDO-locked rig at BOTH ends** (frequency within ±0.6 Hz for
-  URC-60). UR and the WSJT-X modes work with an ordinary TCXO.
+* **For Pumpkin, a GPSDO-locked rig at BOTH ends** (frequency within ±0.6 Hz for
+  PUMPKIN-60). UR and the WSJT-X modes work with an ordinary TCXO.
 * **Do not use `rpitx`** (Pi GPIO transmit) on 2 m or 70 cm. Its harmonics
   and spurs are far outside the rules.
 * **An SDR transmitter** (Pluto, HackRF) is possible later. It needs a proper
@@ -65,7 +66,7 @@ python3 -m uranus run                  # on air
 ### Listen, station map and PSK Reporter
 
 ```bash
-python3 -m uranus listen                    # decode URC/UR from the rig every slot, log to out/spots.jsonl
+python3 -m uranus listen                    # decode Pumpkin/UR from the rig every slot, log to out/spots.jsonl
 python3 -m uranus map --psk --open          # map: blue = heard in the last 30 min, red = earlier
 python3 -m uranus map --demo --open         # the same map with clearly labelled sample stations
 ```
@@ -76,6 +77,15 @@ ring**, drawn faded, means offline. Each label shows callsign, band, SNR,
 bearing and distance. Solid lines mean you decoded them, dashed lines mean
 they decoded you (from PSK Reporter), and thick lines mean both. Online it
 draws on OpenStreetMap; offline it falls back to a Maidenhead-grid map.
+
+### Cucumber: weak-signal mode for FM radios
+
+**Cucumber** sends the Pumpkin signal as audio through any FM radio. No GPS
+oscillator is needed, because FM returns the audio frequency exactly. In
+simulation it decodes about 11 to 13 dB *below* the noise in a 12.5 kHz FM
+channel, more than 20 dB beyond where FM voice or APRS stop working. That
+brings weak-signal propagation testing to every FM-only radio, especially
+on 220 MHz. See [docs/CUCUMBER-MODE.md](docs/CUCUMBER-MODE.md).
 
 ### Radios, SDRs and 220 MHz
 
@@ -94,16 +104,16 @@ gives a confidence and the reasons, plus a per-band summary of what is
 happening now. The evidence is the path length, the band, local solar time
 at the path midpoint, the season, the path geometry (TEP needs a
 north-south path across the geomagnetic equator) and the signal itself.
-After each URC decode, the decoder re-encodes the message and measures the
+After each Pumpkin decode, the decoder re-encodes the message and measures the
 fading depth and Doppler spread against it.
 
 This is an explainable, rule-based estimate, not a trained neural network.
 No labelled propagation data exists yet to train one; the spot log Uranus
 keeps is the data a learned model could use later.
 
-Set `pskreporter = true` under `[reporting]` to upload your URC/UR decodes
+Set `pskreporter = true` under `[reporting]` to upload your Pumpkin/UR decodes
 to PSK Reporter (start with its test server, the default). WSPRnet only
-accepts WSPR/FST4W, so URC spots are not sent there.
+accepts WSPR/FST4W, so Pumpkin spots are not sent there.
 
 ### Downloads
 
@@ -120,9 +130,9 @@ python3 -m uranus ur-encode "8P6AB GK03 1 1234" ur.wav --submode UR-60
 python3 -m uranus ur-decode ur.wav --submode UR-60 [--expect 8P6AB GK03]
 python3 -m uranus ur-loopback --submode UR-15 --snr -19
 python3 -m uranus ur-sim                    # sensitivity table
-python3 -m uranus urc-encode "8P6AB GK03 1 1234" urc.wav --submode URC-60
-python3 -m uranus urc-decode urc.wav --submode URC-60
-python3 -m uranus urc-loopback --submode URC-60 --snr -30
+python3 -m uranus pumpkin-encode "8P6AB GK03 1 1234" pumpkin.wav --submode PUMPKIN-60
+python3 -m uranus pumpkin-decode pumpkin.wav --submode PUMPKIN-60
+python3 -m uranus pumpkin-loopback --submode PUMPKIN-60 --snr -30
 python3 -m uranus link-budget --watts 10 --mhz 144.49 --km 200 --extra-loss 25
 ```
 
@@ -131,7 +141,7 @@ beacon frequency.
 
 ## Sensitivity summary (measured, 50 % decode, SNR in 2500 Hz)
 
-| Slot | UR (noncoherent) | **URC (coherent, GPSDO)** | WSJT-X FST4 |
+| Slot | UR (noncoherent) | **Pumpkin (coherent, GPSDO)** | WSJT-X FST4 |
 |---|---|---|---|
 | 15 s | −19.4 | **−24.7** | −20.7 |
 | 60 s | −25.4 | **−30.8** | −28.1 |
@@ -139,7 +149,7 @@ beacon frequency.
 
 The 15 s and 60 s figures come from the full audio path with blind time and
 frequency search; "(sim)" means simulation only. See
-[docs/URC-MODE.md](docs/URC-MODE.md), [docs/UR-MODE.md](docs/UR-MODE.md),
+[docs/PUMPKIN-MODE.md](docs/PUMPKIN-MODE.md), [docs/UR-MODE.md](docs/UR-MODE.md),
 [docs/RESEARCH.md](docs/RESEARCH.md) and
 [docs/ACHIEVEMENTS.md](docs/ACHIEVEMENTS.md).
 
@@ -162,7 +172,7 @@ Uranus is free software under the **GNU General Public License v3.0** (see
 improve it; anything built from it must stay open under the same terms and
 keep the credit.
 
-**Testers wanted worldwide.** Run URC-60 alongside FST4W-120 or Q65-60A on
+**Testers wanted worldwide.** Run PUMPKIN-60 alongside FST4W-120 or Q65-60A on
 the same path, then open an issue with your callsign, grid, path, the decode
 SNR of each mode and any recordings.
 

@@ -1,4 +1,4 @@
-"""URC - coherent UR mode with pilot-aided carrier recovery.
+"""Pumpkin - coherent UR mode with pilot-aided carrier recovery.
 
 Same 64-bit payload, CRC-16 and K=9 r=1/3 code as UR, but:
 
@@ -32,7 +32,7 @@ from . import urmode
 from .fec import conv_encode, viterbi_decode
 
 FS = 12000
-SUBMODES = {"URC-15": 0.04, "URC-30": 0.08, "URC-60": 0.16, "URC-120": 0.32, "URC-300": 0.8}
+SUBMODES = {"PUMPKIN-15": 0.04, "PUMPKIN-30": 0.08, "PUMPKIN-60": 0.16, "PUMPKIN-120": 0.32, "PUMPKIN-300": 0.8}
 PERIODS = {k: int(k.split("-")[1]) for k in SUBMODES}
 BETA = 0.5
 NCODED = urmode.NCODED                 # 264
@@ -83,7 +83,7 @@ def halfsine(sps):
     return p / np.sqrt(np.sum(p ** 2))
 
 
-def modulate(symbols, submode="URC-60", f0=1500.0, amp=0.5, fs=FS):
+def modulate(symbols, submode="PUMPKIN-60", f0=1500.0, amp=0.5, fs=FS):
     """Constant-envelope MSK audio (upper-sideband baseband shifted to f0)."""
     sps = int(round(SUBMODES[submode] * fs))
     rot = np.asarray(symbols) * (1j ** np.arange(len(symbols)))
@@ -191,7 +191,7 @@ def decode_llr(llr, known=None):
 
 
 # --------------------------------------------------------------------------- audio decoder
-def decode_audio(x, submode="URC-60", fs=FS, f_nom=1500.0, df_max=5.0, max_dt=4.0,
+def decode_audio(x, submode="PUMPKIN-60", fs=FS, f_nom=1500.0, df_max=5.0, max_dt=4.0,
                  phase_walk=0.02, known=None, ncand=6):
     T = SUBMODES[submode]
     sps = int(round(T * fs))

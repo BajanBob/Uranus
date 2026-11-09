@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Uranus URC Press Release</title>
+<title>Uranus Press Release</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;700;900&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
@@ -16,7 +16,7 @@
   --muted: #5b6670;
   --rule: #cfcbbf;
   --lamp: #c7791a;        /* dial-lamp amber accent */
-  --signal: #1f6f8b;      /* signal teal for URC data */
+  --signal: #1f6f8b;      /* signal teal for Pumpkin data */
   --panel: #ebe8df;
   --display: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif;
   --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
@@ -143,7 +143,7 @@ footer { padding: 26px 0 40px; border-top: 2px solid var(--ink); font: .8rem var
   <div class="wrap">
     <b>URANUS</b>
     <span>Press release · For immediate release</span>
-    <span>v0.5.0 · 9 November 2026</span>
+    <span>v0.6.0 · 9 November 2026</span>
   </div>
 </header>
 
@@ -151,14 +151,14 @@ footer { padding: 26px 0 40px; border-top: 2px solid var(--ink); font: .8rem var
 <div class="wrap hero">
   <div class="hero-grid">
     <div>
-      <div class="kicker">New coherent mode · URC-60</div>
+      <div class="kicker">New coherent mode · Pumpkin-60</div>
       <div class="big">−30.8<small> dB</small></div>
       <h1>A free 2 m beacon mode that decodes far below the noise. Testers wanted worldwide.</h1>
-      <p>Uranus is free beacon software for the 2 m and 70 cm amateur bands. Its new coherent mode, URC, decodes a one-minute transmission at 30.8 dB below the noise in a 2500 Hz bandwidth, with no prior knowledge of the caller. Now it needs stations on the air.</p>
+      <p>Uranus is free beacon software for the 2 m and 70 cm amateur bands. Its new coherent mode, Pumpkin, decodes a one-minute transmission at 30.8 dB below the noise in a 2500 Hz bandwidth, with no prior knowledge of the caller. Now it needs stations on the air.</p>
     </div>
     <figure class="scope" style="margin:0">
-      <canvas id="wf" aria-label="Simulated receiver waterfall: random noise with a faint vertical URC signal trace near the centre"></canvas>
-      <figcaption><span>Simulated waterfall · URC trace at 1500 Hz, enhanced for display</span><button id="reveal" type="button" aria-pressed="false">Show the signal</button></figcaption>
+      <canvas id="wf" aria-label="Simulated receiver waterfall: random noise with a faint vertical Pumpkin signal trace near the centre"></canvas>
+      <figcaption><span>Simulated waterfall · Pumpkin trace at 1500 Hz, enhanced for display</span><button id="reveal" type="button" aria-pressed="false">Show the signal</button></figcaption>
     </figure>
   </div>
 </div>
@@ -166,12 +166,12 @@ footer { padding: 26px 0 40px; border-top: 2px solid var(--ink); font: .8rem var
 <section>
   <div class="wrap twocol">
     <div class="lede measure">
-      <p><span class="dateline">BRIDGETOWN, BARBADOS — 8 November 2026.</span> The Uranus project, led by Kammie Holder, 8P5AB, today released version 0.5.0 of its free beacon software for the 2 m and 70 cm amateur radio bands. The release introduces <strong>URC</strong>, a coherent weak-signal mode that recovers its carrier from known pilot symbols and demodulates it coherently.</p>
-      <p>In full audio testing, where the decoder must find the signal's timing and frequency on its own, URC-60 decoded at −30.8 dB and URC-15 at −24.7 dB. That is 2.7 to 4.0 dB better than WSJT-X's FST4 at the same slot length and the same transmitter peak power.</p>
-      <p>That puts URC ahead of the published FT8, FST4 and Q65 figures for the same slot length, whenever the receiving station has no prior knowledge of the caller.</p>
+      <p><span class="dateline">BRIDGETOWN, BARBADOS — 8 November 2026.</span> The Uranus project, led by Kammie Holder, 8P5AB, today released version 0.6.0 of its free beacon software for the 2 m and 70 cm amateur radio bands. The release introduces <strong>Pumpkin</strong>, a coherent weak-signal mode that recovers its carrier from known pilot symbols and demodulates it coherently.</p>
+      <p>In full audio testing, where the decoder must find the signal's timing and frequency on its own, Pumpkin-60 decoded at −30.8 dB and Pumpkin-15 at −24.7 dB. That is 2.7 to 4.0 dB better than WSJT-X's FST4 at the same slot length and the same transmitter peak power.</p>
+      <p>That puts Pumpkin ahead of the published FT8, FST4 and Q65 figures for the same slot length, whenever the receiving station has no prior knowledge of the caller.</p>
     </div>
     <div class="lede measure">
-      <p>Uranus is freeware, and the project's next step depends on other amateurs. Every result so far comes from simulation and audio testing. The team is inviting stations around the world to put URC on the air, report what they decode and help turn laboratory numbers into field results.</p>
+      <p>Uranus is freeware, and the project's next step depends on other amateurs. Every result so far comes from simulation and audio testing. The team is inviting stations around the world to put Pumpkin on the air, report what they decode and help turn laboratory numbers into field results.</p>
       <p>The design rules came out of the measurements. An early filtered-BPSK version lost 3.2 dB to its peak-to-average ratio. The team switched to MSK, which keeps a constant envelope, so a transceiver runs it at full power with no loss of sensitivity.</p>
       <p>Uranus runs on a Raspberry Pi or a Windows PC with any Hamlib-controlled all-mode rig, and also sequences APRS, FT8 and WSPR beacons.</p>
     </div>
@@ -186,12 +186,12 @@ footer { padding: 26px 0 40px; border-top: 2px solid var(--ink); font: .8rem var
 
 <section>
   <div class="wrap">
-    <h2>Five design choices behind URC</h2>
+    <h2>Five design choices behind Pumpkin</h2>
     <p class="measure" style="color:var(--muted);margin:10px 0 0">Each one was kept because it measured better, not because it sounded good.</p>
     <div class="principles">
       <div class="pr"><div class="n">01</div>
         <div><span class="tag">Choice</span><p>Trade speed for sensitivity.</p></div>
-        <div class="uranus"><span class="tag">What it gives</span><p>A ladder of submodes from 15 s to 300 s. Every halving of rate gains about 3 dB, and URC-60 occupies under 10 Hz.</p></div></div>
+        <div class="uranus"><span class="tag">What it gives</span><p>A ladder of submodes from 15 s to 300 s. Every halving of rate gains about 3 dB, and Pumpkin-60 occupies under 10 Hz.</p></div></div>
       <div class="pr"><div class="n">02</div>
         <div><span class="tag">Choice</span><p>A built-in carrier reference.</p></div>
         <div class="uranus"><span class="tag">What it gives</span><p>One known pilot in every five symbols, tracked by a Kalman filter and smoother that also uses the pilots that come after each symbol.</p></div></div>
@@ -203,7 +203,7 @@ footer { padding: 26px 0 40px; border-top: 2px solid var(--ink); font: .8rem var
         <div class="uranus"><span class="tag">What it gives</span><p>A K=9, rate ⅓ convolutional code with a soft-decision Viterbi decoder, plus a CRC-16 to reject false decodes.</p></div></div>
       <div class="pr"><div class="n">05</div>
         <div><span class="tag">Choice</span><p>Precise frequency at both ends.</p></div>
-        <div class="uranus"><span class="tag">What it gives</span><p>GPS-disciplined oscillators, so the decoder searches only ±0.6 Hz for URC-60.</p></div></div>
+        <div class="uranus"><span class="tag">What it gives</span><p>GPS-disciplined oscillators, so the decoder searches only ±0.6 Hz for Pumpkin-60.</p></div></div>
     </div>
   </div>
 </section>
@@ -213,25 +213,25 @@ footer { padding: 26px 0 40px; border-top: 2px solid var(--ink); font: .8rem var
     <h2>The numbers</h2>
     <p class="measure" style="color:var(--muted);margin:10px 0 0">Signal strength needed for 50 % of transmissions to decode, SNR in 2500 Hz (the WSJT-X convention). Longer bars mean weaker signals can be decoded.</p>
     <div class="chart">
-      <svg viewBox="0 0 760 330" role="img" aria-label="Bar chart of decode thresholds. 15 second slots: FT8 about minus 21, FST4-15 minus 20.7, URC-15 minus 24.7. 60 second slots: Q65-60A minus 27.4 with no prior information, FST4-60 minus 28.1, Q65-60A minus 30.9 with the caller's callsign known, URC-60 minus 30.8.">
+      <svg viewBox="0 0 760 330" role="img" aria-label="Bar chart of decode thresholds. 15 second slots: FT8 about minus 21, FST4-15 minus 20.7, Pumpkin-15 minus 24.7. 60 second slots: Q65-60A minus 27.4 with no prior information, FST4-60 minus 28.1, Q65-60A minus 30.9 with the caller's callsign known, Pumpkin-60 minus 30.8.">
         <g id="bars"></g>
       </svg>
-      <div class="legend"><span><i class="sw" style="background:var(--signal)"></i>Uranus URC (measured, full audio)</span><span><i class="sw" style="background:var(--muted)"></i>WSJT-X modes (published figures)</span></div>
+      <div class="legend"><span><i class="sw" style="background:var(--signal)"></i>Uranus Pumpkin (measured, full audio)</span><span><i class="sw" style="background:var(--muted)"></i>WSJT-X modes (published figures)</span></div>
     </div>
   </div>
 </section>
 
 <section>
   <div class="wrap">
-    <h2>What's in v0.5.0</h2>
+    <h2>What's in v0.6.0</h2>
     <div class="feats">
       <div class="feat"><h3>Band and mode sequencer</h3><p>2 m, then 1.25 m, then 70 cm, with a 3-minute pause between bands. Each slot is aligned to its UTC boundary, with 1 minute between transmissions.</p></div>
-      <div class="feat"><h3>URC coherent mode</h3><p>Pilot-aided carrier recovery, constant-envelope MSK and a soft Viterbi decoder. Five submodes from 13 s to 4.4 min on air.</p></div>
-      <div class="feat"><h3>UR noncoherent mode</h3><p>4-GFSK with a priori decoding and repeat stacking, for stations without a GPSDO.</p></div>
+      <div class="feat"><h3>Pumpkin coherent mode</h3><p>Pilot-aided carrier recovery, constant-envelope MSK and a soft Viterbi decoder. Five submodes from 13 s to 4.4 min on air.</p></div>
+      <div class="feat"><h3>Cucumber for FM radios</h3><p>The Pumpkin signal sent as audio through any FM radio, with no GPS oscillator. In simulation it decodes more than 20 dB below where FM voice and APRS stop.</p></div>
       <div class="feat"><h3>Radios and SDRs from a list</h3><p>Pick from 19 radio and SDR profiles, with hover help on every setting. Receive with an RTL-SDR; transmit with a HackRF One (experimental, filter required).</p></div>
       <div class="feat"><h3>Link-budget tool</h3><p>A P/N0 link budget for your station that shows the margin in every mode before you go on air.</p></div>
       <div class="feat"><h3>Live station map and propagation</h3><p>Every station by band (2 m, 1.25 m, 70 cm) with distance, bearing and SNR, ringed blue when online and red when not. Each contact gets an estimate of the propagation that carried it, with the reasons.</p></div>
-      <div class="feat"><h3>PSK Reporter uploads</h3><p>Listen mode decodes URC every slot and can upload each decode to PSK Reporter, so URC spots appear alongside other modes worldwide.</p></div>
+      <div class="feat"><h3>PSK Reporter uploads</h3><p>Listen mode decodes Pumpkin every slot and can upload each decode to PSK Reporter, so Pumpkin spots appear alongside other modes worldwide.</p></div>
       <div class="feat"><h3>Pi, Linux and Windows</h3><p>Ready-made downloads for all three: Uranus.exe for Windows, plus one-command installers for Raspberry Pi and Linux.</p></div>
       <div class="feat"><h3>Listen before transmit</h3><p>APRS waits for a clear channel using the rig's S-meter, so the beacon does not transmit over other stations.</p></div>
     </div>
@@ -240,18 +240,37 @@ footer { padding: 26px 0 40px; border-top: 2px solid var(--ink); font: .8rem var
 
 <section>
   <div class="wrap">
-    <h2>Where URC stands</h2>
+    <h2>Where Pumpkin stands</h2>
     <div class="tbl">
       <table>
         <thead><tr><th>Mode</th><th>Slot</th><th>Threshold</th><th>Strength</th><th>Trade-off</th></tr></thead>
         <tbody>
-          <tr class="us"><td><strong>URC-60</strong> (Uranus)</td><td class="num">52.8 s</td><td class="num">−30.8 dB</td><td>Best single-transmission result here without prior knowledge of the caller</td><td>Needs a GPSDO at both ends; best on stable paths</td></tr>
-          <tr><td>Q65-60A (WSJT-X)</td><td class="num">60 s</td><td class="num">−27.4 / −30.9 dB</td><td>Built for scatter and EME fading; reaches −30.9 dB when the caller's callsign is already known</td><td>Needs prior information to match URC</td></tr>
-          <tr><td>FST4-60 (WSJT-X)</td><td class="num">51.8 s</td><td class="num">−28.1 dB</td><td>Proven on air, widely decoded</td><td>2.7 dB less sensitive than URC-60</td></tr>
+          <tr class="us"><td><strong>Pumpkin-60</strong> (Uranus)</td><td class="num">52.8 s</td><td class="num">−30.8 dB</td><td>Best single-transmission result here without prior knowledge of the caller</td><td>Needs a GPSDO at both ends; best on stable paths</td></tr>
+          <tr><td>Q65-60A (WSJT-X)</td><td class="num">60 s</td><td class="num">−27.4 / −30.9 dB</td><td>Built for scatter and EME fading; reaches −30.9 dB when the caller's callsign is already known</td><td>Needs prior information to match Pumpkin</td></tr>
+          <tr><td>FST4-60 (WSJT-X)</td><td class="num">51.8 s</td><td class="num">−28.1 dB</td><td>Proven on air, widely decoded</td><td>2.7 dB less sensitive than Pumpkin-60</td></tr>
           <tr><td>WSPR</td><td class="num">110.6 s</td><td class="num">−31.4 dB</td><td>Thousands of receivers report to WSPRnet</td><td>Takes twice as long on air</td></tr>
         </tbody>
       </table>
     </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="kicker">New in v0.6.0 · weak-signal mode for FM radios</div>
+    <h2 style="margin-top:8px">Cucumber</h2>
+    <p class="measure" style="color:var(--muted);margin:10px 0 0">Most radios on 1.25 m, and millions on 2 m and 70 cm, are FM only. Cucumber gives every one of them a weak-signal beacon mode. It sends the Pumpkin signal as audio through the radio's data port, and the decoder works from the receiver's audio.</p>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>On an ordinary FM radio</th><th>On air</th><th>Decodes down to</th><th>Needs</th></tr></thead>
+        <tbody>
+          <tr><td>FM voice or APRS</td><td class="num">—</td><td class="num">about +10 dB</td><td>A clear signal</td></tr>
+          <tr class="us"><td><strong>Cucumber-15</strong></td><td class="num">13.2 s</td><td class="num">about −11 dB</td><td>Squelch open, data-port audio</td></tr>
+          <tr class="us"><td><strong>Cucumber-60</strong></td><td class="num">52.8 s</td><td class="num">about −13 dB</td><td>Squelch open, data-port audio</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="fine" style="margin-top:10px">Carrier-to-noise in a 12.5 kHz FM channel, from simulation with 2.5 kHz deviation and a ±50 ppm sound-card clock. No GPS oscillator is needed: FM returns the audio frequency exactly as it was sent. Cucumber is still about 25 dB less sensitive than Pumpkin on SSB, because FM gives away weak-signal headroom.</p>
   </div>
 </section>
 
@@ -263,8 +282,8 @@ footer { padding: 26px 0 40px; border-top: 2px solid var(--ink); font: .8rem var
       <ul>
         <li><strong>A band most of the world cannot use.</strong> The 1.25 m band is allocated to amateurs only in the Americas (ITU Region 2), and Barbados allocates 222 to 225 MHz.</li>
         <li><strong>Quiet by nature.</strong> Operators describe the qualities of 2 m with less interference from consumer electronics and a lower noise floor, exactly what a weak-signal mode needs.</li>
-        <li><strong>Waiting to be explored.</strong> Few stations are active and few radios cover it. Uranus runs URC on 222.130 MHz through a transverter or an SDR, and maps every 1.25 m contact in its own colour.</li>
-        <li><strong>Pioneers wanted.</strong> If you have a 222 MHz transverter or a tri-band rig, your reports will map this band in the Caribbean for the first time with URC.</li>
+        <li><strong>Waiting to be explored.</strong> Few stations are active and few radios cover it. Uranus runs Pumpkin on 222.130 MHz through a transverter or an SDR, Cucumber on 223.420 MHz through any FM radio, and maps every 1.25 m contact in its own colour.</li>
+        <li><strong>Pioneers wanted.</strong> With Cucumber, even a tri-band FM handheld can join. Your reports will help map this band across the Caribbean.</li>
       </ul>
     </div>
   </div>
@@ -279,8 +298,8 @@ footer { padding: 26px 0 40px; border-top: 2px solid var(--ink); font: .8rem var
     </blockquote>
     <p class="measure" style="color:var(--muted);margin:18px 0 0">Uranus is free. The only price is a report of what you heard. Any licensed amateur, anywhere, can take part.</p>
     <div class="need">
-      <div><h3>What you need</h3><p>A 2 m, 1.25 m or 70 cm all-mode rig with CAT and USB audio, or an SDR, plus a PC or Raspberry Pi. For URC, a GPS-disciplined oscillator; without one, run UR, FT8 and WSPR. Listeners with only an RTL-SDR dongle are welcome too.</p></div>
-      <div><h3>What to do</h3><p>Transmit or listen for URC-60 alongside FST4W-120 or Q65-60A on the same path, so the modes can be compared like for like.</p></div>
+      <div><h3>What you need</h3><p>Any 2 m, 1.25 m or 70 cm radio with a PC or Raspberry Pi. An FM radio is enough for Cucumber; for Pumpkin, an all-mode rig with a GPS-disciplined oscillator. Listeners with only an RTL-SDR dongle are welcome too.</p></div>
+      <div><h3>What to do</h3><p>Run Pumpkin-60 alongside FST4W-120 or Q65-60A on the same path, or Cucumber alongside FM voice, so each mode can be compared like for like.</p></div>
       <div><h3>How to report</h3><p>Turn on PSK Reporter uploads so your decodes appear on the map automatically, and open an issue on the GitHub page with your path, the decode SNR of each mode and any recordings.</p></div>
     </div>
     <div class="cta"><a class="primary" href="https://github.com/BajanBob/Uranus/issues">Report a test</a></div>
@@ -302,7 +321,7 @@ footer { padding: 26px 0 40px; border-top: 2px solid var(--ink); font: .8rem var
       <h3>About these results</h3>
       <ul class="fine">
         <li><strong>Not yet tested on the air.</strong> All thresholds come from simulation and audio loopback in white Gaussian noise. On-air trials between GPSDO-equipped stations are the next milestone.</li>
-        <li>URC-120 and URC-300 figures (−34.1 and −38.1 dB) are simulation results; URC-15 and URC-60 were measured through the full audio decoder.</li>
+        <li>Pumpkin-120 and Pumpkin-300 figures (−34.1 and −38.1 dB) are simulation results; Pumpkin-15 and Pumpkin-60 were measured through the full audio decoder.</li>
         <li>WSJT-X thresholds are the published figures from the FST4 and Q65 quick-start guides. WSJT-X is the work of K1JT and the WSJT development group.</li>
         <li>Operators must check their licence conditions for new digital modes, unattended operation and every frequency they enable.</li>
       </ul>
@@ -320,8 +339,8 @@ footer { padding: 26px 0 40px; border-top: 2px solid var(--ink); font: .8rem var
 (function () {
   // ---------- threshold chart ----------
   var data = [
-    { g: "15 s slot", rows: [["FT8", -21.0, 0], ["FST4-15", -20.7, 0], ["URC-15", -24.7, 1]] },
-    { g: "60 s slot", rows: [["Q65-60A, no prior info", -27.4, 0], ["FST4-60", -28.1, 0], ["Q65-60A, callsign known", -30.9, 0], ["URC-60", -30.8, 1]] }
+    { g: "15 s slot", rows: [["FT8", -21.0, 0], ["FST4-15", -20.7, 0], ["Pumpkin-15", -24.7, 1]] },
+    { g: "60 s slot", rows: [["Q65-60A, no prior info", -27.4, 0], ["FST4-60", -28.1, 0], ["Q65-60A, callsign known", -30.9, 0], ["Pumpkin-60", -30.8, 1]] }
   ];
   var svgNS = "http://www.w3.org/2000/svg", g = document.getElementById("bars");
   var x0 = 210, x1 = 730, max = 35, y = 28, rowH = 30;
@@ -359,7 +378,7 @@ footer { padding: 26px 0 40px; border-top: 2px solid var(--ink); font: .8rem var
   function row(yy) {
     for (var x = 0; x < W; x++) {
       var re = gauss(), im = gauss(), cx = W / 2, d = Math.abs(x - cx);
-      if (d < 4) { re += (0.55 + boost) * (1 - d / 4) * 1.6; }   // faint URC line, ~10 Hz wide
+      if (d < 4) { re += (0.55 + boost) * (1 - d / 4) * 1.6; }   // faint Pumpkin line, ~10 Hz wide
       var p = (re * re + im * im) / 2;
       var v = Math.log(1 + p) / 2.2;
       var col = colour(v), o = (yy * W + x) * 4;

@@ -1,6 +1,8 @@
-# URC mode — coherent Uranus mode with carrier recovery (v0.2)
+# Pumpkin — coherent weak-signal beacon mode with carrier recovery
 
-URC brings the classic recipe for very weak, long-distance links to a
+*Formerly called URC. Old `urc` / `URC-nn` names in configs and commands still work.*
+
+Pumpkin brings the classic recipe for very weak, long-distance links to a
 2 m / 70 cm beacon: a known reference for carrier lock, coherent
 demodulation, a narrow effective bandwidth and strong convolutional coding. It is the first Uranus
 mode that **beats WSJT-X FST4 at the same slot length and the same
@@ -19,11 +21,11 @@ transmitter peak power**.
 
 | Submode | Symbol T | On air | Main lobe | Frequency tolerance |
 |---|---|---|---|---|
-| URC-15 | 0.04 s | 13.2 s | 37.5 Hz | ±2.5 Hz |
-| URC-30 | 0.08 s | 26.4 s | 18.8 Hz | ±1.25 Hz |
-| URC-60 | 0.16 s | 52.8 s | 9.4 Hz | ±0.6 Hz |
-| URC-120 | 0.32 s | 105.6 s | 4.7 Hz | ±0.3 Hz |
-| URC-300 | 0.8 s | 264 s | 1.9 Hz | ±0.12 Hz |
+| PUMPKIN-15 | 0.04 s | 13.2 s | 37.5 Hz | ±2.5 Hz |
+| PUMPKIN-30 | 0.08 s | 26.4 s | 18.8 Hz | ±1.25 Hz |
+| PUMPKIN-60 | 0.16 s | 52.8 s | 9.4 Hz | ±0.6 Hz |
+| PUMPKIN-120 | 0.32 s | 105.6 s | 4.7 Hz | ±0.3 Hz |
+| PUMPKIN-300 | 0.8 s | 264 s | 1.9 Hz | ±0.12 Hz |
 
 The frequency tolerance comes from the pilot spacing (±1 / (10·T)). At
 144 MHz, ±0.6 Hz is 4 parts per billion, so **both stations need a GPSDO**.
@@ -47,17 +49,17 @@ tiny window.
 
 | Submode | Simulated, GPSDO-class oscillators | **Full audio, blind sync** | FST4 / FST4W (WSJT-X) | Gain over FST4 |
 |---|---|---|---|---|
-| URC-15 | −25.1 | **−24.7** | −20.7 | **+4.0 dB** |
-| URC-30 | −28.1 | — | −24.2 | ≈ +3.9 dB |
-| URC-60 | −31.1 | **−30.8** | −28.1 | **+2.7 dB** |
-| URC-120 | −34.1 | — | −31.3 / −32.8 | ≈ +1.3 to +2.8 dB |
-| URC-300 | −38.1 | — | −35.3 / −36.8 | ≈ +1.3 to +2.8 dB |
+| PUMPKIN-15 | −25.1 | **−24.7** | −20.7 | **+4.0 dB** |
+| PUMPKIN-30 | −28.1 | — | −24.2 | ≈ +3.9 dB |
+| PUMPKIN-60 | −31.1 | **−30.8** | −28.1 | **+2.7 dB** |
+| PUMPKIN-120 | −34.1 | — | −31.3 / −32.8 | ≈ +1.3 to +2.8 dB |
+| PUMPKIN-300 | −38.1 | — | −35.3 / −36.8 | ≈ +1.3 to +2.8 dB |
 
 The "—" cells were not measured through the audio path. Expect them to land
 within about 0.5 dB of the simulation, as the measured submodes did.
 
 The simulation includes random frequency errors up to ±0.2 Hz and random
-phase drift of 0.01 rad per symbol. Robustness of URC-60 to phase drift:
+phase drift of 0.01 rad per symbol. Robustness of PUMPKIN-60 to phase drift:
 
 | Phase random walk per symbol | Threshold |
 |---|---|
@@ -88,7 +90,7 @@ completely. That is why a GPSDO is required.
 ## Next steps
 
 * **LDPC or polar-with-CRC code** instead of K = 9: about +1 dB.
-* **Multi-receiver combining** of URC LLRs over the network (arraying): +3 dB
+* **Multi-receiver combining** of Pumpkin LLRs over the network (arraying): +3 dB
   per doubling.
 * **An optional residual-carrier variant**, with no
   pilots: the trade-off needs measuring.

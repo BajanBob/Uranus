@@ -4,7 +4,7 @@ Receive: RTL-SDR dongle through `rtl_fm` in USB mode, which delivers the same
          12 kHz audio a transceiver would. Used by listen mode when
          [receive] source = "rtl_fm".
 Transmit (experimental): HackRF One through `hackrf_transfer`, streaming
-         8-bit I/Q from stdin. USB (SSB) for FT8/WSPR/UR/URC, FM for APRS.
+         8-bit I/Q from stdin. USB (SSB) for FT8/WSPR/UR/Pumpkin, FM for APRS.
          The carrier is placed `offset_hz` away from the HackRF's centre
          frequency so its DC/LO leak falls outside the wanted signal.
 

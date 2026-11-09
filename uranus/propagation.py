@@ -9,7 +9,7 @@ score from what is known about it on 2 m and 70 cm:
     meteor pre-dawn peak, evening TEP, overnight ducting)
   * path geometry (TEP needs a roughly north-south path across the
     geomagnetic equator)
-  * the signal itself, when the URC decoder measured it: fading depth and
+  * the signal itself, when the Pumpkin decoder measured it: fading depth and
     phase wander (Doppler spread), and how steady the decodes were
   * signal strength for the distance (scatter is weak; ducts, Es and TEP are strong)
 

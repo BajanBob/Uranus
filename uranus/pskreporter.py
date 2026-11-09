@@ -7,9 +7,9 @@ Upload: reception reports as IPFIX over UDP to report.pskreporter.info:4739
         5 minutes, each spot once, as PSK Reporter asks of client software.
 Query:  who heard a callsign, from retrieve.pskreporter.info (XML).
 
-Only PSK Reporter is used: it accepts any mode name, so URC and UR spots
-appear there as mode "URC" / "UR". WSPRnet accepts only WSPR/FST4W spots,
-so Uranus never sends URC decodes to it.
+Only PSK Reporter is used: it accepts any mode name, so Pumpkin and UR spots
+appear there as mode "PUMPKIN" / "UR". WSPRnet accepts only WSPR/FST4W spots,
+so Uranus never sends Pumpkin decodes to it.
 """
 
 import logging
