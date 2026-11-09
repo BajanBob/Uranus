@@ -8,6 +8,8 @@ sudo apt-get install -y python3 python3-numpy python3-scipy python3-tk python3-s
     alsa-utils libhamlib-utils
 echo "== Optional: WSJT-X (FT8/WSPR encoders) =="
 sudo apt-get install -y wsjtx || echo "wsjtx not installed - FT8/WSPR slots will be skipped"
+echo "== Optional: SDR tools (RTL-SDR receive, HackRF transmit) =="
+sudo apt-get install -y rtl-sdr hackrf || echo "SDR tools not installed - only needed for SDR receive/transmit"
 python3 - <<'PY' || { echo "Python 3.11 or newer is required"; exit 1; }
 import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)
 PY
