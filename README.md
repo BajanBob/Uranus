@@ -70,10 +70,28 @@ python3 -m uranus map --psk --open          # map: blue = heard in the last 30 m
 python3 -m uranus map --demo --open         # the same map with clearly labelled sample stations
 ```
 
-The map shows each station's grid, distance, bearing and last/best SNR.
-Solid lines mean you decoded them, dashed lines mean they decoded you
-(from PSK Reporter), and thick lines mean both. Online it draws on
-OpenStreetMap; offline it falls back to a Maidenhead-grid map.
+The map colours stations by band: **2 m in teal, 70 cm in violet**. A
+**blue ring** means online (heard in the last 30 minutes) and a **red
+ring**, drawn faded, means offline. Each label shows callsign, band, SNR,
+bearing and distance. Solid lines mean you decoded them, dashed lines mean
+they decoded you (from PSK Reporter), and thick lines mean both. Online it
+draws on OpenStreetMap; offline it falls back to a Maidenhead-grid map.
+
+### Propagation analyst
+
+For every contact, Uranus estimates which propagation mode most likely
+carried it: line of sight, tropospheric scatter, tropospheric ducting,
+aircraft scatter, meteor scatter, sporadic-E or trans-equatorial (TEP). It
+gives a confidence and the reasons, plus a per-band summary of what is
+happening now. The evidence is the path length, the band, local solar time
+at the path midpoint, the season, the path geometry (TEP needs a
+north-south path across the geomagnetic equator) and the signal itself.
+After each URC decode, the decoder re-encodes the message and measures the
+fading depth and Doppler spread against it.
+
+This is an explainable, rule-based estimate, not a trained neural network.
+No labelled propagation data exists yet to train one; the spot log Uranus
+keeps is the data a learned model could use later.
 
 Set `pskreporter = true` under `[reporting]` to upload your URC/UR decodes
 to PSK Reporter (start with its test server, the default). WSPRnet only

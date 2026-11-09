@@ -88,8 +88,9 @@ class Listener:
             x = record(self.frame_s + 4.5, self.device)
             mode, res = self.decode(x)
             for r in res:
+                extra = {k: r[k] for k in ("fade_db", "spread_hz") if k in r}
                 sp = spots.add({"call": r["call"], "grid": r["grid"], "snr": r["snr"], "freq_hz": r["freq_hz"],
-                                "mode": mode, "direction": "rx", "slot": int(start)}, self.spot_path)
+                                "mode": mode, "direction": "rx", "slot": int(start), **extra}, self.spot_path)
                 log.info("DECODE %s %s %+.1f dB  %.6f MHz", r["call"], r["grid"], r["snr"], r["freq_hz"] / 1e6)
                 if self.reporter:
                     self.reporter.add(sp)

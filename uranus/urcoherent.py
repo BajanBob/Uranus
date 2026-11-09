@@ -156,6 +156,36 @@ def symbols_to_llr(r, df_max_cycles=0.0, phase_walk=0.02, nfft=4096, genie_h=Non
     return llr, fo
 
 
+def channel_metrics(r, symbols, T, block_s=0.8):
+    """Data-aided channel measurement after a successful decode.
+
+    r: frequency-corrected, derotated matched-filter samples; symbols: the
+    re-encoded transmitted +/-1 symbols. Every symbol is then known, so the
+    signal is wiped off and averaged coherently in blocks of about `block_s` seconds.
+    Noise is measured in the in-phase residual only (MSK puts its symbol
+    overlap in quadrature). Returns (snr_2500_db, fade_db, spread_hz, reliable):
+    reliable is False when each block is too weak (< 10 dB) for the fading and
+    Doppler figures to mean anything.
+    """
+    block = max(4, int(round(block_s / T)))
+    w = r * symbols
+    nb = len(w) // block
+    wb = w[:nb * block].reshape(nb, block)
+    m = wb.mean(axis=1)
+    u = np.real(wb * (np.conj(m) / (np.abs(m) + 1e-12))[:, None])
+    n0 = max(2 * float(np.mean(np.var(u, axis=1, ddof=1))), 1e-12)
+    p = np.abs(m) ** 2 - n0 / block
+    a2 = max(float(np.mean(p)), 1e-6 * n0)
+    fade = float(np.std(10 * np.log10(np.maximum(p, 0.05 * a2))))
+    ph = np.unwrap(np.angle(m))
+    k = np.arange(nb)
+    resid = ph - np.polyval(np.polyfit(k, ph, 1), k)
+    spread = float(np.std(np.diff(resid)) / (2 * np.pi * block * T))
+    snr = 10 * np.log10(a2 / n0 / (2500 * T))
+    reliable = 10 * np.log10(a2 * block / n0) >= 10
+    return round(float(snr), 1), round(fade, 2), round(spread, 3), bool(reliable)
+
+
 def decode_llr(llr, known=None):
     return urmode.unpack_message(viterbi_decode(llr, urmode.NINFO, known))
 
@@ -196,11 +226,12 @@ def decode_audio(x, submode="URC-60", fs=FS, f_nom=1500.0, df_max=5.0, max_dt=4.
         llr, fo = symbols_to_llr(r, df_max * T, phase_walk)
         m = decode_llr(llr, known)
         if m:
-            zp = r * np.exp(-2j * np.pi * fo * np.arange(NSYM))
-            a2 = np.abs(np.mean(zp[PILOT_POS] * PILOTS)) ** 2
-            n0 = max(np.mean(np.abs(zp) ** 2) - a2, 1e-12)
-            m.update(dt=round(tau / fs, 2), df=round(fo / T, 3),
-                     snr=round(float(10 * np.log10(a2 / n0 / (2500 * T))), 1))
+            zc = r * np.exp(-2j * np.pi * fo * np.arange(NSYM))
+            sym = message_to_symbols(m["call"], m["grid"], m["type"], m["value"])
+            snr, fade_db, spread_hz, ok = channel_metrics(zc, sym, T)
+            m.update(dt=round(tau / fs, 2), df=round(fo / T, 3), snr=snr)
+            if ok:
+                m.update(fade_db=fade_db, spread_hz=spread_hz)
             out.append(m)
             break
     return out

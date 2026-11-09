@@ -109,13 +109,34 @@ class TestPSKReporter(unittest.TestCase):
 class TestMap(unittest.TestCase):
     def test_aggregate_and_render(self):
         st = mapgen.aggregate(mapgen.demo_spots(), "GK03ec")
-        self.assertEqual(len(st), 8)
+        self.assertEqual(len(st), 11)                       # SAMPLE8 is on both bands
+        self.assertEqual({s["band"] for s in st if s["call"] == "SAMPLE8"}, {"2m", "70cm"})
+        for s in st:
+            self.assertAlmostEqual(sum(s["prop"].values()), 1.0, delta=0.01)
         both = [s for s in st if s["call"] == "SAMPLE3"][0]
         self.assertEqual(both["dirs"], ["heard", "rx"])
         self.assertTrue(both["online"])
         html = mapgen.render(st, "8P5AB", "GK03ec", note=mapgen.DEMO_NOTE)
         self.assertIn("SAMPLE DATA", html)
         self.assertNotIn("__DATA__", html)
+
+
+class TestPropagation(unittest.TestCase):
+    def test_textbook_cases(self):
+        from uranus import propagation as pr
+        bb = (13.1, -59.6)
+        noon_june = 1_781_000_000 - (1_781_000_000 % 86400) + 16 * 3600   # ~12h local, June
+        es = pr.classify(bb, (25.0, -77.4), "2m", noon_june, snr=-8)
+        self.assertEqual(es[0][0], "es")
+        es70 = pr.classify(bb, (25.0, -77.4), "70cm", noon_june, snr=-8)
+        self.assertNotEqual(es70[0][0], "es")
+        evening = noon_june + 8 * 3600
+        tep = pr.classify(bb, (-23.5, -46.6), "2m", evening, snr=-15, fade_db=7, spread_hz=0.9)
+        self.assertEqual(tep[0][0], "tep")
+        duct = pr.classify(bb, (10.5, -66.9), "70cm", evening, snr=-12, fade_db=0.7, spread_hz=0.02, steady=1.0)
+        self.assertEqual(duct[0][0], "ducting")
+        near = pr.classify(bb, (13.15, -59.55), "2m", noon_june)
+        self.assertEqual(near[0][0], "los")
 
 
 class TestAPRS(unittest.TestCase):
