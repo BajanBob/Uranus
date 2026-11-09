@@ -1,5 +1,7 @@
 # Uranus — summary of achievements (November 2026)
 
+Project lead: Kammie Holder, 8P5AB, Barbados. Licence: GPL-3.0.
+
 Uranus is a Raspberry Pi beacon system for the 2 m and 70 cm amateur bands.
 It sequences APRS, FT8 and WSPR automatically and adds two new weak-signal
 modes. One of them, **URC**, decodes 2.7–4 dB below WSJT-X's FST4 at the same
@@ -16,7 +18,7 @@ slot length and transmitter peak power.
 | FT8 / WSPR | Audio from WSJT-X's reference encoders, with a Costas sync check | Built; needs `wsjtx` installed |
 | **UR mode** | Noncoherent 4-GFSK, K=9 r=⅓ code, soft Viterbi, a-priori decoding, repeat stacking | Built, measured |
 | **URC mode** | Coherent MSK + pilots, Kalman/RTS carrier recovery, soft Viterbi | Built, measured |
-| Link-budget tool | DSN-style P/N0 budget with the margin for every mode; reproduces Voyager 1 | Built, tested |
+| Link-budget tool | P/N0 budget with the margin for every mode | Built, tested |
 | Simulators | Monte-Carlo threshold measurement, ideal-sync and full audio | Built |
 | Tests | 17 automated tests (FEC, packing, loopbacks, no false decodes, APRS, scheduler, link budget) | All pass |
 
@@ -52,7 +54,7 @@ ones landed within about 0.5 dB of their simulations.
    roughly a minute on air, or combining repeats or receivers. This is
    physics, not software.
 2. **Most of the gain over WSJT-X comes from coherent detection.** URC
-   locks the carrier phase from pilots, as NASA's DSN does with Voyager's
+   locks the carrier phase from pilots, as long-haul receivers lock onto a
    residual carrier, and that is worth 3–5 dB over noncoherent FSK.
 3. **Peak power matters.** The first URC version used filtered BPSK. Its
    3.2 dB peak-to-average ratio would have erased most of the gain on a real
@@ -67,10 +69,9 @@ ones landed within about 0.5 dB of their simulations.
    neural classifiers, RF fingerprinting and fast reconfiguration are useful
    for band monitoring, but not for decoding a known signal in Gaussian
    noise.
-7. **Voyager's link,** in the same 2500 Hz terms, arrives at about −2 dB
-   SNR. NASA's edge is antenna gain and cold receivers. Its signal design
-   (low rate, carrier reference, coherent demodulation, convolutional code)
-   is what URC adopts.
+7. **Big antennas and quiet receivers still matter.** On 2 m, sky noise
+   dominates, so the antenna and a quiet site count more than the preamp.
+   On 70 cm, a low-noise masthead preamp is worth having.
 
 ## 4. Limits and honest caveats
 
@@ -93,7 +94,7 @@ ones landed within about 0.5 dB of their simulations.
 3. **Networked multi-receiver combining** (arraying): +3 dB per doubling of
    receivers.
 4. **A GNU Radio / SDR front end** feeding the decoder.
-5. **A residual-carrier (Voyager-style) URC variant,** to compare against
+5. **A residual-carrier URC variant,** to compare against
    pilots.
 
 Repository: https://github.com/BajanBob/Uranus

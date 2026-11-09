@@ -63,22 +63,3 @@ of dB.
 4. **Fix the antenna side.** Use a low-noise preamp at the antenna for 70 cm,
    a quiet location and a horizontal yagi. These make the decode easier
    rather than making the decoder better.
-
-## 4. What we took from NASA's Deep Space Network
-
-The DSN receives Voyager 1 at about 32 dB-Hz P/N0, which is roughly −2 dB in
-WSJT-X's 2500 Hz terms. Its achievement is mostly antennas and cold
-receivers. Its *signal design* still transfers directly:
-
-| DSN / Voyager | Uranus | Result |
-|---|---|---|
-| Lower data rate when margin is thin (160 → 40 bps) | Submode ladder URC-15 … URC-300 | about 3 dB per halving of rate |
-| Residual carrier + narrow PLL | Pilot symbols + Kalman/RTS carrier smoother | Coherent lock at about −31 dB in 2500 Hz |
-| Coherent BPSK | Coherent MSK (constant envelope, same BPSK sensitivity) | 0.0 dB peak-to-average |
-| K=7 r=½ conv + Viterbi | K=9 r=⅓ conv + soft Viterbi | A stronger code than Voyager's |
-| Predicted Doppler, narrow search window | GPSDO at both ends, ±0.6 Hz search | Required for URC |
-| Arraying antennas | LLR stacking of repeats / receivers | +3.4 dB for 4× (UR); URC next |
-| Maximise G/T | `link-budget` tool, preamp and yagi advice | On 2 m sky noise dominates; on 70 cm a low-NF preamp counts |
-
-Run `python -m uranus link-budget --voyager` to reproduce the Voyager figure,
-or put in your own station to see the margin for every mode.

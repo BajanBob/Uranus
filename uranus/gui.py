@@ -85,7 +85,7 @@ class App(tk.Tk):
             ("Link budget", lambda: self.cli(["link-budget", "--watts", "10", "--mhz", "144.49",
                                               "--km", "200", "--extra-loss", "25",
                                               "--tx-gain", "10", "--rx-gain", "13"])),
-            ("Voyager check", lambda: self.cli(["link-budget", "--voyager"])),
+            ("400 km example", lambda: self.cli(["link-budget", "--example"])),
             ("Open output folder", self.open_out),
         ]:
             ttk.Button(bar2, text=text, command=cmd).pack(side="left", padx=3, pady=3)

@@ -2,7 +2,7 @@
 
 A Raspberry Pi beacon sequencer for **2 m and 70 cm**. It sends APRS, FT8,
 WSPR and two new weak-signal modes: **UR** (noncoherent) and **URC**
-(coherent, with Voyager-style carrier recovery). **URC beats WSJT-X FST4 by
+(coherent, with pilot-aided carrier recovery). **URC beats WSJT-X FST4 by
 2.7–4 dB at the same slot length and peak power**, provided both stations
 use a GPSDO. It runs on its
 own: it switches frequency and mode through CAT control and keeps the gaps
@@ -73,7 +73,6 @@ python3 -m uranus urc-encode "8P6AB GK03 1 1234" urc.wav --submode URC-60
 python3 -m uranus urc-decode urc.wav --submode URC-60
 python3 -m uranus urc-loopback --submode URC-60 --snr -30
 python3 -m uranus link-budget --watts 10 --mhz 144.49 --km 200 --extra-loss 25
-python3 -m uranus link-budget --voyager
 ```
 
 The decoder takes any WAV recorded from a USB receiver with the dial on the
@@ -104,3 +103,16 @@ frequency search; "(sim)" means simulation only. See
   licence conditions. Check what Barbados requires before running it
   unattended.
 * **WSPR power:** `wspr_power_dbm` must be your real output power.
+
+## Licence and testers
+
+Uranus is free software under the **GNU General Public License v3.0** (see
+`LICENSE`), the same licence WSJT-X uses. You may use, study, share and
+improve it; anything built from it must stay open under the same terms and
+keep the credit.
+
+**Testers wanted worldwide.** Run URC-60 alongside FST4W-120 or Q65-60A on
+the same path, then open an issue with your callsign, grid, path, the decode
+SNR of each mode and any recordings.
+
+Project lead: Kammie Holder, 8P5AB, Barbados.

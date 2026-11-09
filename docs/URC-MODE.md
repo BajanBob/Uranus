@@ -1,8 +1,8 @@
 # URC mode — coherent Uranus mode with carrier recovery (v0.2)
 
-URC applies the Voyager / Deep Space Network recipe to a 2 m / 70 cm beacon:
-a known reference for carrier lock, coherent demodulation, a narrow
-effective bandwidth and strong convolutional coding. It is the first Uranus
+URC brings the classic recipe for very weak, long-distance links to a
+2 m / 70 cm beacon: a known reference for carrier lock, coherent
+demodulation, a narrow effective bandwidth and strong convolutional coding. It is the first Uranus
 mode that **beats WSJT-X FST4 at the same slot length and the same
 transmitter peak power**.
 
@@ -27,8 +27,8 @@ transmitter peak power**.
 
 The frequency tolerance comes from the pilot spacing (±1 / (10·T)). At
 144 MHz, ±0.6 Hz is 4 parts per billion, so **both stations need a GPSDO**.
-This is the amateur equivalent of NASA feeding its receivers predicted
-Doppler.
+Knowing the frequency this precisely is what lets the receiver search a
+tiny window.
 
 ## Receiver (the carrier-recovery chain)
 
@@ -38,7 +38,7 @@ Doppler.
    steps), an FFT of the pilot-wiped samples finds the carrier offset.
 3. **Carrier tracking.** A complex-phasor Kalman filter plus an RTS smoother
    runs over the pilots. It predicts the carrier's motion, and the backward
-   pass also uses later pilots. This does the job of the DSN's narrow PLL,
+   pass also uses later pilots. This does the job of a narrow phase-locked loop,
    and because it works offline it can do better than a real-time loop.
 4. **Decoding.** Coherent LLRs go into a soft Viterbi decoder (with optional
    a-priori bits), then a CRC check.
@@ -72,7 +72,7 @@ completely. That is why a GPSDO is required.
 ## Why it wins, and its limits
 
 * **Coherent detection beats noncoherent 4-FSK** by about 3–5 dB at these
-  code rates. That is the whole gain, and the same reason NASA keeps a
+  code rates. That is the whole gain, and the reason long-haul links keep a
   carrier reference.
 * **The 20 % pilot overhead costs about 1 dB.** It is already included in
   the numbers above.
@@ -90,6 +90,6 @@ completely. That is why a GPSDO is required.
 * **LDPC or polar-with-CRC code** instead of K = 9: about +1 dB.
 * **Multi-receiver combining** of URC LLRs over the network (arraying): +3 dB
   per doubling.
-* **An optional residual-carrier variant**, closer to Voyager, with no
+* **An optional residual-carrier variant**, with no
   pilots: the trade-off needs measuring.
 * **A GNU Radio front end** for SDR receivers.

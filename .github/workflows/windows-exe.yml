@@ -46,6 +46,7 @@ jobs:
           Copy-Item config/uranus.toml "$pkg/config/"
           Copy-Item docs/*.md "$pkg/docs/"
           Copy-Item README.md $pkg/
+          Copy-Item LICENSE "$pkg/LICENSE.txt"
           Copy-Item windows/README-WINDOWS.txt $pkg/
           Copy-Item windows/start-rigctld.bat $pkg/
           Copy-Item dist/WhisperMite-Setup.exe "$pkg/WhisperMite/"

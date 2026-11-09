@@ -69,9 +69,10 @@ class TestLinkBudget(unittest.TestCase):
     def test_fspl(self):
         self.assertAlmostEqual(linkbudget.fspl_db(144, 100), 115.6, delta=0.1)
 
-    def test_voyager(self):
-        pn0, _ = linkbudget.voyager_example()
-        self.assertAlmostEqual(pn0, 32.5, delta=1.0)
+    def test_example_budget(self):
+        b = linkbudget.example()
+        self.assertAlmostEqual(b["snr2500_db"], b["p_n0_dbhz"] - 33.98, delta=0.01)
+        self.assertLess(b["path_loss_db"], 230)
 
 
 class TestAPRS(unittest.TestCase):

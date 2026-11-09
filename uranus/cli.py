@@ -90,7 +90,7 @@ def main(argv=None):
                    help="beyond-horizon / obstruction loss above free space, dB")
     a.add_argument("--nf", type=float, default=1.0, help="receiver noise figure dB")
     a.add_argument("--sky-k", type=float, default=None)
-    a.add_argument("--voyager", action="store_true", help="show the Voyager-1 example")
+    a.add_argument("--example", action="store_true", help="show a reference 2 m tropo path")
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s")
@@ -168,12 +168,12 @@ def main(argv=None):
         if not res:
             print("no decode")
     elif args.cmd == "link-budget":
-        if args.voyager:
-            pn0, snr = linkbudget.voyager_example()
-            print(f"Voyager 1 at one light-day: P/N0 = {pn0:.1f} dB-Hz, SNR(2500 Hz) = {snr:.1f} dB")
-            return
-        b = linkbudget.budget(args.watts, args.mhz, args.km, args.tx_gain, args.rx_gain,
-                              args.feed_loss, args.extra_loss, args.nf, args.sky_k)
+        if args.example:
+            print("Reference 2 m path: 10 W, 13 dBi yagis, 400 km, 60 dB beyond-horizon loss")
+            b = linkbudget.example()
+        else:
+            b = linkbudget.budget(args.watts, args.mhz, args.km, args.tx_gain, args.rx_gain,
+                                  args.feed_loss, args.extra_loss, args.nf, args.sky_k)
         print(f"EIRP {b['eirp_dbw']:.1f} dBW, path loss {b['path_loss_db']:.1f} dB, "
               f"Prx {b['p_rx_dbw']:.1f} dBW")
         print(f"Tsys {b['t_sys_k']:.0f} K -> N0 {b['n0_dbw_hz']:.1f} dBW/Hz; "

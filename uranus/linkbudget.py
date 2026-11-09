@@ -1,4 +1,4 @@
-"""Link budget in the Deep-Space-Network style: work in P/N0 (dB-Hz).
+"""Link budget worked in P/N0 (dB-Hz), received power to noise density.
 
     P_rx  = P_tx + G_tx - L_feed_tx - L_path + G_rx
     N0    = k * T_sys            T_sys = T_sky + T_rx (from noise figure)
@@ -47,9 +47,8 @@ def budget(tx_w, freq_mhz, dist_km, tx_gain_dbi=0.0, rx_gain_dbi=0.0, feed_loss_
             "margins_db": {m: pn0 - 10 * math.log10(2500) - th for m, th in THRESHOLDS.items()}}
 
 
-def voyager_example():
-    """The worked Voyager-1 numbers: 23 W, 48 dBi, 8.4 GHz, one light-day, 70 m dish, 20 K."""
-    d_km = 299792.458 * 86400
-    p_tx = 10 * math.log10(23)
-    pn0 = p_tx + 48 - fspl_db(8400, d_km) + 74 - (K_DBW + 10 * math.log10(20))
-    return pn0, pn0 - 10 * math.log10(2500)
+def example():
+    """A reference 2 m path: 10 W, 13 dBi yagis both ends, 400 km with 60 dB
+    beyond-horizon loss, 1 dB NF receiver."""
+    return budget(10, 144.49, 400, tx_gain_dbi=13, rx_gain_dbi=13, feed_loss_db=1.5,
+                  extra_path_loss_db=60, rx_nf_db=1.0)

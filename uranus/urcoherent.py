@@ -7,7 +7,7 @@ Same 64-bit payload, CRC-16 and K=9 r=1/3 code as UR, but:
     pilots follow a PRBS7 +/-1 sequence (gives clean timing correlation)
     MSK on air: baseband = sum b_k * j^k * halfsine(t - kT), pulse length 2T.
       This is constant-envelope (0 dB peak-to-average, like FST4 and like
-      Voyager's phase-modulated carrier), so a rig runs it at full power,
+      a phase-modulated carrier), so a rig runs it at full power,
       yet each symbol detects coherently with BPSK performance.
 
 Receiver ("carrier recovery of a signal buried in noise"):
