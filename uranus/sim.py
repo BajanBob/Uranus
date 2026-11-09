@@ -36,7 +36,7 @@ def ideal_sync_curve(esn0_list, trials=200, repeats=1, ap=False, seed=1):
                 llr += u.tone_llrs(Y, a, 1.0)
             known = u.known_bits(call, grid) if ap else None
             m = u.decode_llr(llr, known)
-            ok += bool(m and m["call"] == call and m["value"] == val)
+            ok += bool(m and m.get("call") == call and m.get("value") == val)
         out.append(ok / trials)
     return np.array(out)
 
@@ -55,7 +55,7 @@ def audio_curve(snr_list, submode="UR-15", trials=40, seed=2):
             sigma = np.sqrt(np.mean(y ** 2) / (10 ** (snr / 10) * 2500 * 2 / u.FS))
             x += sigma * rng.standard_normal(len(x))
             res = u.decode_audio(x, submode)
-            ok += any(r["call"] == call and r["value"] == val for r in res)
+            ok += any(r.get("call") == call and r.get("value") == val for r in res)
         out.append(ok / trials)
     return np.array(out)
 

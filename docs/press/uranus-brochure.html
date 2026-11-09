@@ -11,13 +11,20 @@
 /* Layout idea: a press release set like a station log sheet, opening on a live
    receiver waterfall with the signal hidden in the noise. Bold in one place: the hero. */
 :root {
-  --paper: #f4f2ec;
-  --ink: #16212b;
-  --muted: #5b6670;
-  --rule: #cfcbbf;
-  --lamp: #c7791a;        /* dial-lamp amber accent */
-  --signal: #1f6f8b;      /* signal teal for Pumpkin data */
-  --panel: #ebe8df;
+  /* Colour edition: Pumpkin orange, Cucumber green, 220 MHz sky blue on warm white. */
+  --paper: #fffaf2;
+  --ink: #1b2430;
+  --muted: #5c6670;
+  --rule: #e6dccb;
+  --pumpkin: #e8701a;
+  --pumpkin-soft: #fde7d3;
+  --cuke: #2a9a52;
+  --cuke-soft: #dcf2e3;
+  --sky: #2b6fc1;
+  --sky-soft: #e0ecfa;
+  --lamp: var(--pumpkin);
+  --signal: var(--pumpkin);
+  --panel: #f6efe3;
   --display: "Big Shoulders Display", "Arial Narrow", "Roboto Condensed", sans-serif;
   --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "Consolas", monospace;
@@ -25,13 +32,15 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --paper: #10161c; --ink: #e6e2d6; --muted: #98a2ab; --rule: #2c3640;
-    --lamp: #e5a24a; --signal: #5fb3cf; --panel: #17202a; color-scheme: dark;
+    --paper: #12161c; --ink: #ece6da; --muted: #9aa3ac; --rule: #2d3642; --panel: #19212b;
+    --pumpkin: #ff9a4a; --pumpkin-soft: #3a2616; --cuke: #5fd38a; --cuke-soft: #16301f;
+    --sky: #6aa8ff; --sky-soft: #172a42; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --paper: #10161c; --ink: #e6e2d6; --muted: #98a2ab; --rule: #2c3640;
-  --lamp: #e5a24a; --signal: #5fb3cf; --panel: #17202a; color-scheme: dark;
+  --paper: #12161c; --ink: #ece6da; --muted: #9aa3ac; --rule: #2d3642; --panel: #19212b;
+  --pumpkin: #ff9a4a; --pumpkin-soft: #3a2616; --cuke: #5fd38a; --cuke-soft: #16301f;
+  --sky: #6aa8ff; --sky-soft: #172a42; color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -47,7 +56,24 @@ h3 { font-size: 1.45rem; font-weight: 700; letter-spacing: .02em; }
 .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
 /* masthead */
-.mast { border-bottom: 2px solid var(--ink); }
+.mast { border-bottom: 2px solid var(--ink); position: relative; }
+.mast::before { content: ""; display: block; height: 8px; background: linear-gradient(90deg, var(--pumpkin) 0 34%, var(--cuke) 34% 67%, var(--sky) 67% 100%); }
+section.tint-pumpkin { background: var(--pumpkin-soft); }
+section.tint-cuke { background: var(--cuke-soft); }
+section.tint-sky { background: var(--sky-soft); }
+.word-pumpkin { color: var(--pumpkin); }
+.word-cuke { color: var(--cuke); }
+.uses { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 22px; }
+.use { background: var(--paper); border-radius: 6px; padding: 16px 16px 14px; border-top: 6px solid var(--c, var(--pumpkin)); }
+.use h3 { font-size: 1.3rem; margin-bottom: 6px; }
+.use p { margin: 0; font-size: .95rem; color: var(--muted); }
+.use .mode { display: inline-block; margin-top: 10px; font: 600 .72rem var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--c, var(--pumpkin)); }
+@media (max-width: 820px) { .uses { grid-template-columns: minmax(0, 1fr); } }
+.feat:nth-child(3n+1) { border-top: 3px solid var(--pumpkin); }
+.feat:nth-child(3n+2) { border-top: 3px solid var(--cuke); }
+.feat:nth-child(3n) { border-top: 3px solid var(--sky); }
+.chatbox { margin-top: 18px; background: #101418; color: #e5e1d6; border-radius: 6px; padding: 14px 16px; font: .9rem/1.6 var(--mono); max-width: 46rem; }
+.chatbox .me { color: #ffae6b; } .chatbox .them { color: #7fe0a0; } .chatbox .sys { color: #8c98a4; }
 .mast .wrap { display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; align-items: baseline; padding-top: 18px; padding-bottom: 12px; }
 .mast b { font-family: var(--display); font-size: 1.6rem; letter-spacing: .08em; }
 .mast span { font: 600 .8rem/1.4 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
@@ -55,7 +81,7 @@ h3 { font-size: 1.45rem; font-weight: 700; letter-spacing: .02em; }
 /* hero */
 .hero { padding: 36px 0 28px; }
 .hero-grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 32px; align-items: center; }
-.kicker { font: 600 .8rem var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--lamp); }
+.kicker { font: 600 .8rem var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--pumpkin); }
 .big { font-family: var(--display); font-weight: 900; font-size: clamp(5rem, 15vw, 10.5rem); line-height: .85; letter-spacing: -.01em; margin: 10px 0 6px; font-variant-numeric: tabular-nums; }
 .big small { font-size: .38em; font-weight: 700; color: var(--muted); }
 .hero h1 { font-size: clamp(1.7rem, 3.6vw, 2.5rem); font-weight: 700; margin-bottom: 14px; }
@@ -98,7 +124,8 @@ table { border-collapse: collapse; width: 100%; min-width: 620px; font-size: .92
 th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
 th { font: 600 .72rem var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); border-bottom: 2px solid var(--ink); }
 td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
-tr.us td { background: color-mix(in srgb, var(--signal) 9%, transparent); }
+section.tint-cuke tr.us td { background: color-mix(in srgb, var(--cuke) 16%, transparent); }
+tr.us td { background: color-mix(in srgb, var(--pumpkin) 13%, transparent); }
 
 .fine { font-size: .88rem; color: var(--muted); }
 .fine li { margin-bottom: 6px; }
@@ -117,7 +144,7 @@ footer { padding: 26px 0 40px; border-top: 2px solid var(--ink); font: .8rem var
 .motto cite { display: block; margin-top: 12px; font: 600 .82rem var(--mono); font-style: normal; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .motto cite b { color: var(--lamp); }
 .frontier { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 32px; align-items: start; margin-top: 18px; }
-.freq { font: 900 clamp(4rem, 11vw, 7.5rem)/.85 var(--display); color: var(--lamp); font-variant-numeric: tabular-nums; }
+.freq { font: 900 clamp(4rem, 11vw, 7.5rem)/.85 var(--display); color: var(--sky); font-variant-numeric: tabular-nums; }
 .freq small { display: block; font: 600 .8rem var(--mono); color: var(--muted); letter-spacing: .1em; text-transform: uppercase; margin-top: 10px; }
 .frontier ul { margin: 0; padding-left: 1.1em; }
 .frontier li { margin-bottom: 8px; }
@@ -143,7 +170,7 @@ footer { padding: 26px 0 40px; border-top: 2px solid var(--ink); font: .8rem var
   <div class="wrap">
     <b>URANUS</b>
     <span>Press release · For immediate release</span>
-    <span>v0.6.0 · 9 November 2026</span>
+    <span>v0.7.0 · 9 November 2026</span>
   </div>
 </header>
 
@@ -151,10 +178,10 @@ footer { padding: 26px 0 40px; border-top: 2px solid var(--ink); font: .8rem var
 <div class="wrap hero">
   <div class="hero-grid">
     <div>
-      <div class="kicker">New coherent mode · Pumpkin-60</div>
+      <div class="kicker"><span class="word-pumpkin">Pumpkin</span> · <span class="word-cuke">Cucumber</span> · chat · 220 MHz</div>
       <div class="big">−30.8<small> dB</small></div>
-      <h1>A free 2 m beacon mode that decodes far below the noise. Testers wanted worldwide.</h1>
-      <p>Uranus is free beacon software for the 2 m and 70 cm amateur bands. Its new coherent mode, Pumpkin, decodes a one-minute transmission at 30.8 dB below the noise in a 2500 Hz bandwidth, with no prior knowledge of the caller. Now it needs stations on the air.</p>
+      <h1>Weak-signal beacons and chat for every VHF radio. Testers wanted worldwide.</h1>
+      <p>Uranus is free beacon and chat software for the 2 m, 1.25 m and 70 cm amateur bands. Its coherent mode, <strong class="word-pumpkin">Pumpkin</strong>, decodes a one-minute transmission 30.8 dB below the noise. Its FM mode, <strong class="word-cuke">Cucumber</strong>, gives any FM radio a weak-signal beacon and chat. Now it needs stations on the air.</p>
     </div>
     <figure class="scope" style="margin:0">
       <canvas id="wf" aria-label="Simulated receiver waterfall: random noise with a faint vertical Pumpkin signal trace near the centre"></canvas>
@@ -166,7 +193,7 @@ footer { padding: 26px 0 40px; border-top: 2px solid var(--ink); font: .8rem var
 <section>
   <div class="wrap twocol">
     <div class="lede measure">
-      <p><span class="dateline">BRIDGETOWN, BARBADOS — 8 November 2026.</span> The Uranus project, led by Kammie Holder, 8P5AB, today released version 0.6.0 of its free beacon software for the 2 m and 70 cm amateur radio bands. The release introduces <strong>Pumpkin</strong>, a coherent weak-signal mode that recovers its carrier from known pilot symbols and demodulates it coherently.</p>
+      <p><span class="dateline">BRIDGETOWN, BARBADOS — 8 November 2026.</span> The Uranus project, led by Kammie Holder, 8P5AB, today released version 0.7.0 of its free beacon software for the 2 m and 70 cm amateur radio bands. The release introduces <strong>Pumpkin</strong>, a coherent weak-signal mode that recovers its carrier from known pilot symbols and demodulates it coherently.</p>
       <p>In full audio testing, where the decoder must find the signal's timing and frequency on its own, Pumpkin-60 decoded at −30.8 dB and Pumpkin-15 at −24.7 dB. That is 2.7 to 4.0 dB better than WSJT-X's FST4 at the same slot length and the same transmitter peak power.</p>
       <p>That puts Pumpkin ahead of the published FT8, FST4 and Q65 figures for the same slot length, whenever the receiving station has no prior knowledge of the caller.</p>
     </div>
@@ -208,7 +235,7 @@ footer { padding: 26px 0 40px; border-top: 2px solid var(--ink); font: .8rem var
   </div>
 </section>
 
-<section>
+<section class="tint-pumpkin">
   <div class="wrap">
     <h2>The numbers</h2>
     <p class="measure" style="color:var(--muted);margin:10px 0 0">Signal strength needed for 50 % of transmissions to decode, SNR in 2500 Hz (the WSJT-X convention). Longer bars mean weaker signals can be decoded.</p>
@@ -216,20 +243,20 @@ footer { padding: 26px 0 40px; border-top: 2px solid var(--ink); font: .8rem var
       <svg viewBox="0 0 760 330" role="img" aria-label="Bar chart of decode thresholds. 15 second slots: FT8 about minus 21, FST4-15 minus 20.7, Pumpkin-15 minus 24.7. 60 second slots: Q65-60A minus 27.4 with no prior information, FST4-60 minus 28.1, Q65-60A minus 30.9 with the caller's callsign known, Pumpkin-60 minus 30.8.">
         <g id="bars"></g>
       </svg>
-      <div class="legend"><span><i class="sw" style="background:var(--signal)"></i>Uranus Pumpkin (measured, full audio)</span><span><i class="sw" style="background:var(--muted)"></i>WSJT-X modes (published figures)</span></div>
+      <div class="legend"><span><i class="sw" style="background:var(--pumpkin)"></i>Uranus Pumpkin (measured, full audio)</span><span><i class="sw" style="background:var(--muted)"></i>WSJT-X modes (published figures)</span></div>
     </div>
   </div>
 </section>
 
 <section>
   <div class="wrap">
-    <h2>What's in v0.6.0</h2>
+    <h2>What's in v0.7.0</h2>
     <div class="feats">
       <div class="feat"><h3>Band and mode sequencer</h3><p>2 m, then 1.25 m, then 70 cm, with a 3-minute pause between bands. Each slot is aligned to its UTC boundary, with 1 minute between transmissions.</p></div>
       <div class="feat"><h3>Pumpkin coherent mode</h3><p>Pilot-aided carrier recovery, constant-envelope MSK and a soft Viterbi decoder. Five submodes from 13 s to 4.4 min on air.</p></div>
       <div class="feat"><h3>Cucumber for FM radios</h3><p>The Pumpkin signal sent as audio through any FM radio, with no GPS oscillator. In simulation it decodes more than 20 dB below where FM voice and APRS stop.</p></div>
       <div class="feat"><h3>Radios and SDRs from a list</h3><p>Pick from 19 radio and SDR profiles, with hover help on every setting. Receive with an RTL-SDR; transmit with a HackRF One (experimental, filter required).</p></div>
-      <div class="feat"><h3>Link-budget tool</h3><p>A P/N0 link budget for your station that shows the margin in every mode before you go on air.</p></div>
+      <div class="feat"><h3>Chat at the edge of the noise</h3><p>Type messages over Pumpkin or Cucumber, about 11 characters per transmission, taking turns like FT8, with automatic callsign ID.</p></div>
       <div class="feat"><h3>Live station map and propagation</h3><p>Every station by band (2 m, 1.25 m, 70 cm) with distance, bearing and SNR, ringed blue when online and red when not. Each contact gets an estimate of the propagation that carried it, with the reasons.</p></div>
       <div class="feat"><h3>PSK Reporter uploads</h3><p>Listen mode decodes Pumpkin every slot and can upload each decode to PSK Reporter, so Pumpkin spots appear alongside other modes worldwide.</p></div>
       <div class="feat"><h3>Pi, Linux and Windows</h3><p>Ready-made downloads for all three: Uranus.exe for Windows, plus one-command installers for Raspberry Pi and Linux.</p></div>
@@ -257,8 +284,42 @@ footer { padding: 26px 0 40px; border-top: 2px solid var(--ink); font: .8rem var
 
 <section>
   <div class="wrap">
-    <div class="kicker">New in v0.6.0 · weak-signal mode for FM radios</div>
-    <h2 style="margin-top:8px">Cucumber</h2>
+    <h2>What Pumpkin and Cucumber can be used for</h2>
+    <p class="measure" style="color:var(--muted);margin:10px 0 0">Each transmission carries a callsign, a grid square and a short telemetry value, or 11 characters of text. That is enough for a lot.</p>
+    <div class="uses">
+      <div class="use" style="--c:var(--pumpkin)"><h3>Propagation beacons</h3><p>Round-the-clock beacons on 2 m, 1.25 m and 70 cm that show exactly when and where a band opens, with every spot on the map and on PSK Reporter.</p><span class="mode">Pumpkin · Cucumber</span></div>
+      <div class="use" style="--c:var(--sky)"><h3>A ducting watch on 220 MHz</h3><p>A network of ordinary FM radios that detects tropospheric ducting across the Caribbean long before voice contacts become possible.</p><span class="mode">Cucumber</span></div>
+      <div class="use" style="--c:var(--cuke)"><h3>Messages when voice fails</h3><p>Short text between licensed operators at the edge of range during storms and outages, at signal levels where voice is unreadable. A supplement to established emergency nets, not a replacement.</p><span class="mode">Chat</span></div>
+      <div class="use" style="--c:var(--pumpkin)"><h3>Remote telemetry</h3><p>A 14-bit value in every beacon: battery voltage, temperature or wind from a solar-powered station on a hilltop, or a high-altitude balloon.</p><span class="mode">Pumpkin · Cucumber</span></div>
+      <div class="use" style="--c:var(--cuke)"><h3>Clubs and schools</h3><p>Free, open software for teaching signal processing, coding and propagation with real radios, from a phone-charger-powered Pi upwards.</p><span class="mode">All modes</span></div>
+      <div class="use" style="--c:var(--sky)"><h3>Citizen science</h3><p>Every spot carries distance, SNR, fading and a propagation estimate: a growing open dataset for studying VHF and UHF propagation.</p><span class="mode">Pumpkin · map · PSK Reporter</span></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap twocol">
+    <div class="measure">
+      <div class="kicker">New in v0.7.0</div>
+      <h2 style="margin-top:8px">Chat at the edge of the noise</h2>
+      <p>Uranus now carries keyboard chat on both modes. Messages are split into 11-character frames, sent in turn like FT8 and joined back together at the other end, with your callsign sent automatically at least every 10 minutes. Text is plain, as amateur rules require.</p>
+      <p style="color:var(--muted)">Bandwidth is no obstacle: Pumpkin occupies under 40 Hz and Cucumber one ordinary 12.5 kHz FM channel. Speed is the trade-off for sensitivity: about 44 characters a minute on the 15-second submodes, about 11 on the more sensitive 60-second ones.</p>
+    </div>
+    <div>
+      <div class="chatbox" role="img" aria-label="Example chat log">
+        <div class="sys">10:00:15  heard 8P5AB GK03</div>
+        <div class="them">10:01:30  8P5AB: DUCT OPEN ON 220. HEARING J68 AT -24 DB. QSL?</div>
+        <div class="me">10:02:15  me: QSL 8P5AB. 73 FROM FK93</div>
+        <div class="sys">example log · Cucumber-15</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="tint-cuke">
+  <div class="wrap">
+    <div class="kicker" style="color:var(--cuke)">Weak-signal mode for FM radios</div>
+    <h2 style="margin-top:8px" class="word-cuke">Cucumber</h2>
     <p class="measure" style="color:var(--muted);margin:10px 0 0">Most radios on 1.25 m, and millions on 2 m and 70 cm, are FM only. Cucumber gives every one of them a weak-signal beacon mode. It sends the Pumpkin signal as audio through the radio's data port, and the decoder works from the receiver's audio.</p>
     <div class="tbl">
       <table>
@@ -274,7 +335,7 @@ footer { padding: 26px 0 40px; border-top: 2px solid var(--ink); font: .8rem var
   </div>
 </section>
 
-<section>
+<section class="tint-sky">
   <div class="wrap">
     <h2>The 220 MHz frontier</h2>
     <div class="frontier">
@@ -356,7 +417,7 @@ footer { padding: 26px 0 40px; border-top: 2px solid var(--ink); font: .8rem var
     grp.rows.forEach(function (r) {
       var w = (-r[1] / max) * (x1 - x0);
       el("text", { x: x0 - 10, y: y + 15, "text-anchor": "end", "font-size": 12.5, "font-weight": r[2] ? 600 : 400 }, r[0]);
-      el("rect", { x: x0, y: y + 3, width: w, height: 18, rx: 2, fill: r[2] ? "var(--signal)" : "var(--muted)", opacity: r[2] ? 1 : 0.55 });
+      el("rect", { x: x0, y: y + 3, width: w, height: 18, rx: 2, fill: r[2] ? "var(--pumpkin)" : "var(--muted)", opacity: r[2] ? 1 : 0.55 });
       el("text", { x: x0 + w + 6, y: y + 16, "font-size": 12, "font-weight": r[2] ? 600 : 400 }, String(r[1]).replace("-", "−") + " dB");
       y += rowH;
     });

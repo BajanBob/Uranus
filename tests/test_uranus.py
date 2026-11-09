@@ -24,7 +24,7 @@ class TestFEC(unittest.TestCase):
 class TestURMode(unittest.TestCase):
     def test_pack_roundtrip(self):
         m = urmode.unpack_message(urmode.pack_message("8P6AB", "GK03", 5, 16383))
-        self.assertEqual(m, {"call": "8P6AB", "grid": "GK03", "type": 5, "value": 16383})
+        self.assertEqual(m, {"kind": "beacon", "call": "8P6AB", "grid": "GK03", "type": 5, "value": 16383})
 
     def test_tones(self):
         t = urmode.message_to_tones("K1ABC", "FN42")
@@ -91,6 +91,34 @@ class TestCucumber(unittest.TestCase):
         os.unlink(path)
         s = [x for x in slots if x.freq_mhz == 144.49 and x.enabled and x.mode != "wspr"][0]
         self.assertEqual((s.mode, s.submode), ("pumpkin", "PUMPKIN-60"))
+
+
+class TestChat(unittest.TestCase):
+    def test_text_frames_roundtrip(self):
+        from uranus import urmode as u
+        for text, seq, more in [("DUCT OPEN", 0, False), ("QSL 73 ", 3, True), ("+-./? 0Z", 4, True)]:
+            m = u.unpack_message(u.pack_text(text, seq, more))
+            self.assertEqual((m["kind"], m["text"].rstrip(), m["seq"], m["more"]), ("text", text.rstrip(), seq, more))
+        b = u.unpack_message(u.pack_message("8P5AB", "GK03", 6, 0))
+        self.assertEqual(b["kind"], "beacon")
+
+    def test_reassembly_keeps_spaces_and_sender(self):
+        from uranus import chat, urmode as u
+        frames = chat.frames_for("Hello world from Barbados, QSL?", "8P5AB", "GK03", True)
+        self.assertTrue(frames[0][0].startswith("ID"))
+        re_ = chat.Reassembler()
+        msgs = []
+        for _, bits in frames:
+            for e in re_.feed(u.unpack_message(bits)):
+                if e["type"] == "message":
+                    msgs.append(e)
+        self.assertEqual(msgs[0]["text"], "HELLO WORLD FROM BARBADOS. QSL?")
+        self.assertEqual(msgs[0]["from"], "8P5AB")
+
+    def test_chat_over_cucumber(self):
+        from uranus import chat
+        ev = chat.demo("CQ 220 DE 8P5AB", "CUCUMBER-15", -6.0, seed=4)
+        self.assertIn("CQ 220 DE 8P5AB", [e["text"] for e in ev if e["type"] == "message"])
 
 
 class TestLinkBudget(unittest.TestCase):

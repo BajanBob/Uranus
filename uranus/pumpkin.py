@@ -69,8 +69,8 @@ def rrc(sps, beta=BETA, span=8):
     return h / np.sqrt(np.sum(h ** 2))
 
 
-def message_to_symbols(call, grid, mtype=0, value=0):
-    coded = conv_encode(urmode.pack_message(call, grid, mtype, value))
+def message_to_symbols(call, grid, mtype=0, value=0, bits=None):
+    coded = conv_encode(bits if bits is not None else urmode.pack_message(call, grid, mtype, value))
     tx = coded[urmode.PERM]
     s = np.empty(NSYM)
     s[DATA_POS] = 1.0 - 2.0 * tx
@@ -227,7 +227,7 @@ def decode_audio(x, submode="PUMPKIN-60", fs=FS, f_nom=1500.0, df_max=5.0, max_d
         m = decode_llr(llr, known)
         if m:
             zc = r * np.exp(-2j * np.pi * fo * np.arange(NSYM))
-            sym = message_to_symbols(m["call"], m["grid"], m["type"], m["value"])
+            sym = message_to_symbols(None, None, bits=urmode.message_bits(m))
             snr, fade_db, spread_hz, ok = channel_metrics(zc, sym, T)
             m.update(dt=round(tau / fs, 2), df=round(fo / T, 3), snr=snr)
             if ok:

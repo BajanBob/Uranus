@@ -107,6 +107,9 @@ class Listener:
                 x = record(self.frame_s + 4.5, self.device)
             mode, res = self.decode(x)
             for r in res:
+                if r.get("kind") == "text":
+                    log.info("TEXT  [%d%s] %r  %+.1f dB", r["seq"], "+" if r["more"] else "", r["text"], r["snr"])
+                    continue
                 extra = {k: r[k] for k in ("fade_db", "spread_hz") if k in r}
                 sp = spots.add({"call": r["call"], "grid": r["grid"], "snr": r["snr"], "freq_hz": r["freq_hz"],
                                 "mode": mode, "direction": "rx", "slot": int(start), **extra}, self.spot_path)

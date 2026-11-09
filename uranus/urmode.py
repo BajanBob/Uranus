@@ -56,6 +56,13 @@ DATA_POS = np.array([n for n, (k, _) in enumerate(_layout) if k == "d"])
 
 CHARS = " 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
+# Text frames live in the callsign code space a 6-character callsign never
+# uses (37^6 .. 2^32-1), so beacon decoders never mistake them for stations.
+TEXT_CHARS = " 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ+-./?"
+TEXT_LEN = 11
+CALL_SPACE = 37 ** 6
+_TEXT_MAP = {",": ".", ";": ".", ":": ".", "!": ".", "'": "", '"': "", "_": "-", "=": "-", "@": "/"}
+
 
 # --------------------------------------------------------------------------- message
 def pack_message(call, grid, mtype=0, value=0):
@@ -76,11 +83,58 @@ def pack_message(call, grid, mtype=0, value=0):
     return bits + int_to_bits(crc16(bits), 16)
 
 
+def clean_text(text):
+    out = []
+    for c in text.upper():
+        c = _TEXT_MAP.get(c, c)
+        out.append(c if (c == "" or c in TEXT_CHARS) else "?")
+    return "".join(out)
+
+
+def split_text(text):
+    """Split a chat message into 11-character frame texts."""
+    t = " ".join(clean_text(text).split())
+    if not t:
+        return []
+    return [t[i:i + TEXT_LEN] for i in range(0, len(t), TEXT_LEN)]
+
+
+def pack_text(text, seq=0, more=False):
+    """64-bit text frame: 11 characters, a sequence number (mod 5) and a 'more follows' flag."""
+    t = clean_text(text)
+    if len(t) > TEXT_LEN:
+        raise ValueError(f"at most {TEXT_LEN} characters per frame")
+    v = 0
+    for c in t.ljust(TEXT_LEN):
+        v = v * len(TEXT_CHARS) + TEXT_CHARS.index(c)
+    big = ((seq % 5) * 2 + int(bool(more))) * len(TEXT_CHARS) ** TEXT_LEN + v
+    hi, lo = divmod(big, 1 << 32)
+    bits = int_to_bits(CALL_SPACE + hi, 32) + int_to_bits(lo, 32)
+    return bits + int_to_bits(crc16(bits), 16)
+
+
+def message_bits(m):
+    """Re-create the 80 information bits of a decoded message (beacon or text)."""
+    if m.get("kind") == "text":
+        return pack_text(m["text"], m["seq"], m["more"])
+    return pack_message(m["call"], m["grid"], m["type"], m["value"])
+
+
 def unpack_message(bits):
     payload, crc = list(bits[:NPAYLOAD]), bits_to_int(bits[NPAYLOAD:NINFO])
     if crc16(payload) != crc:
         return None
     n = bits_to_int(payload[:32])
+    if n >= CALL_SPACE:
+        big = (n - CALL_SPACE) * (1 << 32) + bits_to_int(payload[32:64])
+        flag, v = divmod(big, len(TEXT_CHARS) ** TEXT_LEN)
+        if flag >= 10:
+            return None
+        chars = []
+        for _ in range(TEXT_LEN):
+            v, r = divmod(v, len(TEXT_CHARS))
+            chars.append(TEXT_CHARS[r])
+        return {"kind": "text", "text": "".join(reversed(chars)), "seq": flag // 2, "more": bool(flag % 2)}
     chars = []
     for _ in range(6):
         n, r = divmod(n, 37)
@@ -91,7 +145,7 @@ def unpack_message(bits):
         return None
     gl, gd = divmod(g, 100)
     grid = chr(65 + gl // 18) + chr(65 + gl % 18) + f"{gd:02d}"
-    return {"call": call, "grid": grid, "type": bits_to_int(payload[47:50]),
+    return {"kind": "beacon", "call": call, "grid": grid, "type": bits_to_int(payload[47:50]),
             "value": bits_to_int(payload[50:64])}
 
 
@@ -107,8 +161,8 @@ def known_bits(call=None, grid=None):
 
 
 # --------------------------------------------------------------------------- encoder
-def message_to_tones(call, grid, mtype=0, value=0):
-    coded = conv_encode(pack_message(call, grid, mtype, value))
+def message_to_tones(call, grid, mtype=0, value=0, bits=None):
+    coded = conv_encode(bits if bits is not None else pack_message(call, grid, mtype, value))
     tx = coded[PERM]
     data = [GRAY[(int(tx[2 * i]), int(tx[2 * i + 1]))] for i in range(NDATA)]
     tones = np.zeros(NSYM, dtype=int)
@@ -210,7 +264,7 @@ def decode_audio(x, submode="UR-60", fs=FS, fmin=300.0, fmax=2700.0, max_dt=4.0,
             results.append({"llr": llr, "t0": t0 * hop / fs, "f0": (b + 1.5 * os_f) * df})
             continue
         msg = decode_llr(llr, known)
-        if msg and not any(r["call"] == msg["call"] and r["value"] == msg["value"] for r in results):
+        if msg and not any(message_bits(r) == message_bits(msg) for r in results):
             snr = 10 * np.log10(a2 / (2500 * T * n0) * (1.0))
             msg.update(dt=round(t0 * hop / fs, 2), freq=round((b + 1.5 * os_f) * df, 1),
                        snr=round(float(snr), 1))

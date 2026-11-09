@@ -13,6 +13,8 @@
   python -m uranus cucumber-encode "CALL GRID [TYPE VALUE]" out.wav --submode CUCUMBER-60
   python -m uranus cucumber-decode in.wav --submode CUCUMBER-60
   python -m uranus cucumber-loopback --submode CUCUMBER-15 --cnr -8   (simulated FM radio link)
+  python -m uranus chat --submode PUMPKIN-15 --freq 144.495 --slot even   (type messages, Ctrl+C to quit)
+  python -m uranus chat-demo "your message" --submode CUCUMBER-15 --level -6   (no radio needed)
   python -m uranus link-budget --watts 10 --mhz 144.49 --km 150 --tx-gain 10 --rx-gain 13
   python -m uranus listen [--slots N]       decode Pumpkin/UR from the rig, log spots, report to PSK Reporter
   python -m uranus map [--psk] [--demo]     build out/map.html (blue online, red offline)
@@ -97,6 +99,16 @@ def main(argv=None):
     a = sub.add_parser("cucumber-loopback")
     a.add_argument("--submode", default="CUCUMBER-15", choices=cucumber.SUBMODES)
     a.add_argument("--cnr", type=float, default=-8, help="carrier-to-noise in a 12.5 kHz FM channel, dB")
+    from . import chat as chatmod
+    a = sub.add_parser("chat")
+    a.add_argument("--submode", default="PUMPKIN-15", choices=chatmod.SUBMODES)
+    a.add_argument("--freq", type=float, default=144.495, help="channel or dial frequency, MHz")
+    a.add_argument("--slot", choices=["even", "odd"], default="even", help="your transmit slots")
+    a = sub.add_parser("chat-demo")
+    a.add_argument("message")
+    a.add_argument("--submode", default="PUMPKIN-15", choices=chatmod.SUBMODES)
+    a.add_argument("--level", type=float, default=-20,
+                   help="SNR in 2500 Hz (Pumpkin) or carrier-to-noise in 12.5 kHz (Cucumber), dB")
     a = sub.add_parser("link-budget")
     a.add_argument("--watts", type=float, default=10)
     a.add_argument("--mhz", type=float, default=144.49)
@@ -123,7 +135,7 @@ def main(argv=None):
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s")
 
-    if args.cmd in ("plan", "run", "aprs-wav", "listen", "map"):
+    if args.cmd in ("plan", "run", "aprs-wav", "listen", "map", "chat"):
         cfg, slots = scheduler.load_config(args.config)
 
     if args.cmd == "plan":
@@ -163,8 +175,9 @@ def main(argv=None):
         known = urmode.known_bits(*args.expect) if args.expect else None
         res = urmode.decode_audio(_read_wav(args.wav), args.submode, known=known)
         for r in res:
-            print(f"SNR {r['snr']:6.1f} dB  dt {r['dt']:5.2f} s  f {r['freq']:7.1f} Hz  "
-                  f"{r['call']} {r['grid']} type={r['type']} value={r['value']}")
+            what = (f"TEXT {r['text']!r}" if r.get("kind") == "text"
+                    else f"{r['call']} {r['grid']} type={r['type']} value={r['value']}")
+            print(f"SNR {r['snr']:6.1f} dB  dt {r['dt']:5.2f} s  f {r['freq']:7.1f} Hz  {what}")
         if not res:
             print("no decode")
     elif args.cmd == "ur-loopback":
@@ -197,8 +210,9 @@ def main(argv=None):
             x += sigma * rng.standard_normal(len(x))
             res = pumpkin.decode_audio(x, sub_, df_max=dfm)
         for r in res:
-            print(f"SNR~{r['snr']:6.1f} dB  dt {r['dt']:5.2f} s  df {r['df']:+6.3f} Hz  "
-                  f"{r['call']} {r['grid']} type={r['type']} value={r['value']}")
+            what = (f"TEXT {r['text']!r} (part {r['seq']}{', more follows' if r['more'] else ''})"
+                    if r.get("kind") == "text" else f"{r['call']} {r['grid']} type={r['type']} value={r['value']}")
+            print(f"SNR~{r['snr']:6.1f} dB  dt {r['dt']:5.2f} s  df {r['df']:+6.3f} Hz  {what}")
         if not res:
             print("no decode")
     elif args.cmd == "cucumber-encode":
@@ -221,10 +235,49 @@ def main(argv=None):
                   "(FM voice needs about +10 dB)")
         res = cucumber.decode_audio(x, args.submode)
         for r in res:
-            print(f"audio SNR {r['audio_snr']:6.1f} dB  dt {r['dt']:5.2f} s  "
-                  f"{r['call']} {r['grid']} type={r['type']} value={r['value']}")
+            what = (f"TEXT {r['text']!r} (part {r['seq']}{', more follows' if r['more'] else ''})"
+                    if r.get("kind") == "text" else f"{r['call']} {r['grid']} type={r['type']} value={r['value']}")
+            print(f"audio SNR {r['audio_snr']:6.1f} dB  dt {r['dt']:5.2f} s  {what}")
         if not res:
             print("no decode")
+    elif args.cmd == "chat-demo":
+        from . import chat as chatmod
+        for e in chatmod.demo(args.message, args.submode, args.level):
+            if e["type"] == "tx":
+                print(f"  sent     {e['text']}")
+            elif e["type"] == "lost":
+                print(f"  LOST     {e['text']}")
+            elif e["type"] == "message":
+                print(f"MESSAGE from {e['from']}: {e['text']}")
+    elif args.cmd == "chat":
+        from . import chat as chatmod
+        rc = cfg["radio"]
+        if rc.get("backend", "dry-run") == "dry-run":
+            radio = DryRunRadio()
+        elif rc.get("backend") == "hackrf":
+            from .sdr import HackRFRadio
+            sd = cfg.get("sdr", {})
+            radio = HackRFRadio(sd.get("hackrf_txvga", 10), sd.get("hackrf_amp", False))
+        else:
+            radio = HamlibRadio(rc["rigctld_host"], rc["rigctld_port"], rc.get("audio_device", "default"))
+
+        def show(e):
+            t = e.get("type")
+            if t == "message":
+                print(f"\n<<< {e['from']}: {e['text']}")
+            elif t in ("tx", "status", "error", "queued", "id"):
+                print(f"[{t}] {e.get('text') or e.get('call', '')}")
+        eng = chatmod.ChatEngine(cfg, radio, args.submode, args.freq, 0 if args.slot == "even" else 1, show)
+        import threading as _th
+        _th.Thread(target=eng.run, daemon=True).start()
+        print("Type a message and press Enter. Ctrl+C to quit.")
+        try:
+            while True:
+                line = input()
+                if line.strip():
+                    eng.send(line)
+        except (KeyboardInterrupt, EOFError):
+            eng.stop.set()
     elif args.cmd == "link-budget":
         if args.example:
             print("Reference 2 m path: 10 W, 13 dBi yagis, 400 km, 60 dB beyond-horizon loss")

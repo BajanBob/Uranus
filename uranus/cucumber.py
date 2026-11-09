@@ -38,8 +38,8 @@ def _pk(submode):
     return "PUMPKIN-" + submode.split("-")[1]
 
 
-def message_to_symbols(call, grid, mtype=0, value=0):
-    return pumpkin.message_to_symbols(call, grid, mtype, value)
+def message_to_symbols(call, grid, mtype=0, value=0, bits=None):
+    return pumpkin.message_to_symbols(call, grid, mtype, value, bits=bits)
 
 
 def modulate(symbols, submode="CUCUMBER-60", amp=0.5):

@@ -28,7 +28,8 @@ jobs:
       - name: GUI smoke test (main window and Station setup)
         run: >
           python -c "import uranus.gui as g; a=g.App(); a.update(); w=g.SetupWindow(a); a.update();
-          w.v['band_1.25m'].set(True); w.save(); a.update(); a.destroy(); print('GUI OK')"
+          w.v['band_1.25m'].set(True); w.save(); a.update(); c=g.ChatWindow(a); a.update();
+          c.v_text.set('test'); c.estimate(); c.close(); a.update(); a.destroy(); print('GUI OK')"
 
       - name: Restore config after smoke test
         run: git checkout -- config/uranus.toml

@@ -87,6 +87,12 @@ channel, more than 20 dB beyond where FM voice or APRS stop working. That
 brings weak-signal propagation testing to every FM-only radio, especially
 on 220 MHz. See [docs/CUCUMBER-MODE.md](docs/CUCUMBER-MODE.md).
 
+### Chat
+
+Type messages over Pumpkin or Cucumber, at about 11 characters per
+transmission, taking turns like FT8, with automatic callsign ID. Press
+**Chat** in the Uranus window. See [docs/CHAT.md](docs/CHAT.md).
+
 ### Radios, SDRs and 220 MHz
 
 Choose your radio or SDR from the list in **Station setup**; every control
