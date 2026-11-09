@@ -77,6 +77,14 @@ bearing and distance. Solid lines mean you decoded them, dashed lines mean
 they decoded you (from PSK Reporter), and thick lines mean both. Online it
 draws on OpenStreetMap; offline it falls back to a Maidenhead-grid map.
 
+### Radios, SDRs and 220 MHz
+
+Choose your radio or SDR from the list in **Station setup**; every control
+explains itself when you hover over it. Uranus supports CAT rigs (Hamlib),
+RTL-SDR receive, experimental HackRF transmit, and the **1.25 m (220 MHz)**
+band (Region 2) alongside 2 m and 70 cm. See
+[docs/RADIOS-AND-SDR.md](docs/RADIOS-AND-SDR.md).
+
 ### Propagation analyst
 
 For every contact, Uranus estimates which propagation mode most likely

@@ -109,7 +109,8 @@ class TestPSKReporter(unittest.TestCase):
 class TestMap(unittest.TestCase):
     def test_aggregate_and_render(self):
         st = mapgen.aggregate(mapgen.demo_spots(), "GK03ec")
-        self.assertEqual(len(st), 11)                       # SAMPLE8 is on both bands
+        self.assertEqual(len(st), 13)                       # SAMPLE8 is on both 2 m and 70 cm
+        self.assertIn("1.25m", {s["band"] for s in st})
         self.assertEqual({s["band"] for s in st if s["call"] == "SAMPLE8"}, {"2m", "70cm"})
         for s in st:
             self.assertAlmostEqual(sum(s["prop"].values()), 1.0, delta=0.01)
@@ -137,6 +138,49 @@ class TestPropagation(unittest.TestCase):
         self.assertEqual(duct[0][0], "ducting")
         near = pr.classify(bb, (13.15, -59.55), "2m", noon_june)
         self.assertEqual(near[0][0], "los")
+
+
+class TestBandsRadiosSDR(unittest.TestCase):
+    def test_band_of(self):
+        from uranus import propagation as pr
+        self.assertEqual(pr.band_of(144_490_000), "2m")
+        self.assertEqual(pr.band_of(222_130_000), "1.25m")
+        self.assertEqual(pr.band_of(432_300_000), "70cm")
+
+    def test_transverter_offset(self):
+        s = scheduler.Slot("1.25m", "urc", 222.130, lo_mhz=194.0)
+        self.assertAlmostEqual(s.rig_hz, 28.130e6, delta=1)
+
+    def test_config_editor_keeps_disabled_slots(self):
+        import tomllib
+        from uranus import radios
+        t = open("config/uranus.toml", encoding="utf-8").read()
+        t2 = radios.set_band_active(t, "1.25m", True)
+        t2 = radios.set_toml_key(t2, "receive", "source", "rtl_fm")
+        c = tomllib.loads(t2)
+        self.assertTrue([b for b in c["band"] if b["name"] == "1.25m"][0]["active"])
+        self.assertEqual(c["receive"]["source"], "rtl_fm")
+        self.assertFalse([sl for b in c["band"] for sl in b["slot"] if sl["freq_mhz"] == 144.8][0]["enabled"])
+
+    def test_profiles(self):
+        from uranus import radios
+        names = [p.name for p in radios.PROFILES]
+        self.assertEqual(len(names), len(set(names)))
+        self.assertTrue(any("1.25m" in p.bands for p in radios.PROFILES))
+        for p in radios.PROFILES:
+            self.assertIn(p.backend, ("hamlib", "hackrf", "rtl_fm", "audio-only"))
+            self.assertTrue(p.help())
+
+    def test_hackrf_iq_is_upper_sideband(self):
+        from uranus import sdr
+        fs = 12000
+        a = 0.5 * np.sin(2 * np.pi * 1500 * np.arange(fs) / fs)
+        iq = np.frombuffer(b"".join(sdr.iq_chunks(a, fs, "USB", 2_400_000, 200_000)), np.int8).astype(float)
+        z = iq[0::2] + 1j * iq[1::2]
+        seg = z[600_000:600_000 + 2 ** 20]
+        spec = np.abs(np.fft.fft(seg * np.hanning(len(seg)))) ** 2
+        f = np.fft.fftfreq(len(seg), 1 / 2_400_000)
+        self.assertAlmostEqual(f[np.argmax(spec)], 201_500, delta=10)
 
 
 class TestAPRS(unittest.TestCase):

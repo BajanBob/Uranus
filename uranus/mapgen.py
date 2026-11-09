@@ -4,7 +4,7 @@ and by which propagation mode.
 Writes one self-contained HTML page. Online it draws on OpenStreetMap
 (Leaflet); offline it falls back to a built-in Maidenhead-grid map.
 
-Marker fill and line colour = band (2 m teal, 70 cm violet).
+Marker fill and line colour = band (2 m teal, 1.25 m rose, 70 cm violet).
 Marker ring = status: blue = online (heard within `online_min` minutes),
 red = offline. Offline stations are drawn faded.
 Lines: solid = we decoded them, dashed = they decoded us (PSK Reporter),
@@ -18,7 +18,7 @@ import time
 from . import geo, propagation
 
 DEMO_NOTE = "SAMPLE DATA - illustrative stations, not real spots"
-F2M, F70 = 144_491_500, 432_301_500
+F2M, F125, F70 = 144_491_500, 222_131_500, 432_301_500
 
 
 def aggregate(spots, home_grid, online_min=30, now=None, home_latlon=None, ant_heights=(10.0, 10.0)):
@@ -90,6 +90,8 @@ def demo_spots(now=None):
         ("SAMPLE8", 15.3, -61.4, F70, -20, [8], "heard", None, None),
         ("SAMPLE9", 25.0, -77.4, F2M, -8, [25, 30], "rx", 2.5, 0.12),
         ("SAMPLE10", -23.5, -46.6, F2M, -15, [6], "rx", 7.5, 0.9),
+        ("SAMPLE11", 13.9, -61.0, F125, -18, [5, 10, 15], "rx", 0.5, 0.02),
+        ("SAMPLE12", 10.65, -61.5, F125, -26, [11], "heard", None, None),
     ]
     out = []
     for call, lat, lon, f, snr, agos, d, fade, spread in places:
@@ -124,7 +126,7 @@ TEMPLATE = r"""<!DOCTYPE html>
 /* Layout: status strip; map; then per-band propagation cards and the station log. */
 :root {
   --bg: #f3f1eb; --ink: #17212b; --muted: #5d6872; --rule: #d3cec2; --panel: #ffffff;
-  --b2m: #0b8a6c; --b70: #8a3fd0; --online: #1d63d6; --offline: #c8372d; --home: #c7791a;
+  --b2m: #0b8a6c; --b125: #c93a6b; --b70: #8a3fd0; --online: #1d63d6; --offline: #c8372d; --home: #c7791a;
   --sea: #e3ebef; --grid: #b9c6cf;
   --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
   --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
@@ -132,10 +134,10 @@ TEMPLATE = r"""<!DOCTYPE html>
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) { --bg:#0f151b; --ink:#e5e1d6; --muted:#97a1aa; --rule:#2b3540; --panel:#151d26;
-    --b2m:#2fc79f; --b70:#b98cff; --online:#5b9bff; --offline:#ff6b5e; --home:#e5a24a; --sea:#132331; --grid:#2c4558; color-scheme: dark; }
+    --b2m:#2fc79f; --b125:#ff7aa6; --b70:#b98cff; --online:#5b9bff; --offline:#ff6b5e; --home:#e5a24a; --sea:#132331; --grid:#2c4558; color-scheme: dark; }
 }
 :root[data-theme="dark"] { --bg:#0f151b; --ink:#e5e1d6; --muted:#97a1aa; --rule:#2b3540; --panel:#151d26;
-  --b2m:#2fc79f; --b70:#b98cff; --online:#5b9bff; --offline:#ff6b5e; --home:#e5a24a; --sea:#132331; --grid:#2c4558; color-scheme: dark; }
+  --b2m:#2fc79f; --b125:#ff7aa6; --b70:#b98cff; --online:#5b9bff; --offline:#ff6b5e; --home:#e5a24a; --sea:#132331; --grid:#2c4558; color-scheme: dark; }
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body { background: var(--bg); color: var(--ink); font: 15px/1.45 var(--body); }
@@ -183,6 +185,7 @@ footer { padding: 8px 16px 18px; font: .72rem var(--mono); color: var(--muted); 
   <h1>Uranus · station map</h1>
   <span class="stat" id="home"></span>
   <span class="stat"><span class="sw" style="background:var(--b2m)"></span>2 m <b id="n2m">0</b></span>
+  <span class="stat"><span class="sw" style="background:var(--b125)"></span>1.25 m <b id="n125">0</b></span>
   <span class="stat"><span class="sw" style="background:var(--b70)"></span>70 cm <b id="n70">0</b></span>
   <span class="stat"><span class="ring" style="border-color:var(--online)"></span>online <b id="non">0</b></span>
   <span class="stat"><span class="ring" style="border-color:var(--offline)"></span>offline <b id="noff">0</b></span>
@@ -191,6 +194,7 @@ footer { padding: 8px 16px 18px; font: .72rem var(--mono); color: var(--muted); 
 <div id="mapwrap"><div id="map"></div><svg id="fallback" role="img" aria-label="Map of stations on a Maidenhead grid"></svg></div>
 <div class="legend">
   <span><span class="sw" style="background:var(--b2m)"></span>2 m station</span>
+  <span><span class="sw" style="background:var(--b125)"></span>1.25 m station</span>
   <span><span class="sw" style="background:var(--b70)"></span>70 cm station</span>
   <span><span class="ring" style="border-color:var(--online)"></span>online (ring)</span>
   <span><span class="ring" style="border-color:var(--offline)"></span>offline (ring, faded)</span>
@@ -215,8 +219,8 @@ footer { padding: 8px 16px 18px; font: .72rem var(--mono); color: var(--muted); 
   var S = D.stations, H = D.home, M = D.modes;
   var css = getComputedStyle(document.documentElement);
   function col(n) { return css.getPropertyValue(n).trim(); }
-  function bandCol(b) { return b === "70cm" ? col("--b70") : col("--b2m"); }
-  function bandTxt(b) { return b === "70cm" ? "70 cm" : b === "2m" ? "2 m" : "?"; }
+  function bandCol(b) { return b === "70cm" ? col("--b70") : b === "1.25m" ? col("--b125") : col("--b2m"); }
+  function bandTxt(b) { return b === "70cm" ? "70 cm" : b === "1.25m" ? "1.25 m" : b === "2m" ? "2 m" : "?"; }
   function stCol(s) { return s.online ? col("--online") : col("--offline"); }
   function fmtSnr(v) { return (v === null || v === undefined || v !== v || v <= -99) ? "-" : (v > 0 ? "+" : "") + Math.round(v); }
   function ago(m) { return m < 1 ? "now" : m < 60 ? m + " min" : Math.round(m / 60) + " h"; }
@@ -239,6 +243,7 @@ footer { padding: 8px 16px 18px; font: .72rem var(--mono); color: var(--muted); 
   document.getElementById("non").textContent = on.length;
   document.getElementById("noff").textContent = S.length - on.length;
   document.getElementById("n2m").textContent = S.filter(function (s) { return s.band === "2m"; }).length;
+  document.getElementById("n125").textContent = S.filter(function (s) { return s.band === "1.25m"; }).length;
   document.getElementById("n70").textContent = S.filter(function (s) { return s.band === "70cm"; }).length;
   document.getElementById("foot").textContent = "Generated " + D.generated + " · online = heard in the last " + D.online_min +
     " min · SNR in 2500 Hz · great-circle distance and bearing from " + H.grid +
@@ -247,8 +252,9 @@ footer { padding: 8px 16px 18px; font: .72rem var(--mono); color: var(--muted); 
   // per-band propagation cards
   var palette = { los: "#7a8794", tropo_scatter: "#2f80c9", ducting: "#0b8a6c", aircraft: "#d08a1c", meteor: "#c8372d", es: "#8a3fd0", tep: "#b0337f" };
   var bands = document.getElementById("bands");
-  ["2m", "70cm"].forEach(function (b) {
+  ["2m", "1.25m", "70cm"].forEach(function (b) {
     var r = D.summary[b];
+    if (!r && b === "1.25m") return;
     var div = document.createElement("div"); div.className = "band";
     var h = '<h2><span class="sw" style="background:' + bandCol(b) + '"></span>' + bandTxt(b) + " propagation now</h2>";
     if (!r) { div.innerHTML = h + '<div class="meta">No stations heard on this band yet.</div>'; bands.appendChild(div); return; }

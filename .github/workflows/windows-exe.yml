@@ -25,6 +25,14 @@ jobs:
       - name: Run tests
         run: python -m unittest -v tests.test_uranus
 
+      - name: GUI smoke test (main window and Station setup)
+        run: >
+          python -c "import uranus.gui as g; a=g.App(); a.update(); w=g.SetupWindow(a); a.update();
+          w.v['band_1.25m'].set(True); w.save(); a.update(); a.destroy(); print('GUI OK')"
+
+      - name: Restore config after smoke test
+        run: git checkout -- config/uranus.toml
+
       - name: Build Uranus.exe
         run: >
           pyinstaller --noconfirm --onefile --windowed --name Uranus

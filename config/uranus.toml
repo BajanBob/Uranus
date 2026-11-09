@@ -28,6 +28,9 @@ submode = "URC-60"
 dial_mhz = 144.490
 audio_offset_hz = 1500
 audio_device = "default"     # rig's USB audio INPUT (see list-audio-devices)
+source = "audio"             # "audio" (rig/sound card) or "rtl_fm" (RTL-SDR dongle)
+rtl_ppm = 0                  # RTL-SDR frequency correction, parts per million
+rtl_gain = 40                # RTL-SDR gain, dB
 
 [reporting]
 pskreporter = false          # upload your URC/UR decodes to PSK Reporter
@@ -52,15 +55,23 @@ wspr = "USB"
 ur = "USB"
 
 [radio]
-backend = "dry-run"          # "dry-run" (writes WAVs) or "hamlib"
+profile = "Generic CAT rig with USB audio"   # see the Station setup window for the list
+backend = "dry-run"          # "dry-run" (writes WAVs), "hamlib" (CAT rig) or "hackrf" (SDR transmit)
 rigctld_host = "127.0.0.1"
 rigctld_port = 4532
 audio_device = "default"     # ALSA device of the rig's USB sound card, e.g. "plughw:1,0"
 max_tx_s = 320
 
+[sdr]                        # HackRF transmit backend (experimental, see docs/SDR.md)
+hackrf_txvga = 10            # 0-47 dB; start LOW
+hackrf_amp = false           # extra 11 dB amplifier stage
+sample_rate = 2400000
+offset_hz = 200000           # tune off-centre so the HackRF's DC leak is outside the signal
+
 # ------------------------------------------------------------------ 2 m
 [[band]]
 name = "2m"
+active = true                # switch the whole band on/off (Station setup does this)
 
   [[band.slot]]
   mode = "aprs"
@@ -102,9 +113,33 @@ name = "2m"
   freq_mhz = 144.490
   enabled = false
 
+# ------------------------------------------------------------------ 1.25 m (220 MHz)
+# Region 2 only (Barbados: 222-225 MHz - confirm on your licence).
+# Weak-signal segment 222.000-222.150; 222.100 is the SSB/CW calling
+# frequency, so beacons sit clear of it. Few all-mode rigs cover 1.25 m:
+# use a transverter (set transverter_lo_mhz, e.g. 194 for a 28 MHz IF) or
+# the HackRF backend. Enable the band and its slots when your station is ready.
+[[band]]
+name = "1.25m"
+active = false               # switch on when your 1.25 m station is ready
+transverter_lo_mhz = 0.0      # 0 = rig tunes 222 MHz directly
+
+  [[band.slot]]
+  mode = "urc"
+  submode = "URC-60"
+  freq_mhz = 222.130
+  enabled = true
+
+  [[band.slot]]
+  mode = "ur"
+  submode = "UR-60"
+  freq_mhz = 222.130
+  enabled = false
+
 # ------------------------------------------------------------------ 70 cm
 [[band]]
 name = "70cm"
+active = true
 
   [[band.slot]]
   mode = "aprs"

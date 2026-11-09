@@ -37,7 +37,13 @@ class Slot:
     msg_type: int = 0
     msg_value: int = 0
     note: str = ""
+    lo_mhz: float = 0.0                      # transverter local oscillator (0 = none)
     extra: dict = field(default_factory=dict)
+
+    @property
+    def rig_hz(self):
+        """Frequency to put on the rig's dial (IF frequency when a transverter is used)."""
+        return (self.freq_mhz - self.lo_mhz) * 1e6
 
     @property
     def label(self):
@@ -50,10 +56,12 @@ def load_config(path):
         cfg = tomllib.load(f)
     slots = []
     for band in cfg["band"]:
+        if not band.get("active", True):
+            continue
         for s in band["slot"]:
             known = {k: s[k] for k in ("mode", "freq_mhz", "enabled", "submode",
                                        "msg_type", "msg_value", "note") if k in s}
-            slots.append(Slot(band=band["name"], **known))
+            slots.append(Slot(band=band["name"], lo_mhz=float(band.get("transverter_lo_mhz", 0.0)), **known))
     st = cfg["station"]
     if st.get("callsign", "N0CALL").upper() in ("N0CALL", "NOCALL", ""):
         raise SystemExit("Set your own callsign in [station] callsign before running.")
@@ -176,7 +184,7 @@ class Runner:
         self._sleep_until(begin - 3)
         if self.stop.is_set():
             return
-        self.radio.tune(s.freq_mhz * 1e6, rigmodes[s.mode])
+        self.radio.tune(s.rig_hz, rigmodes[s.mode])
         if s.mode == "aprs" and cs.get("enabled", True):
             if not self._clear(cs):
                 log.warning("%s: channel busy, skipped", s.label)
@@ -185,7 +193,7 @@ class Runner:
             self._sleep_until(begin)
         log.info("TX %s at %s UTC", s.label,
                  dt.datetime.now(dt.timezone.utc).strftime("%H:%M:%S.%f")[:-3])
-        self.radio.transmit(s.freq_mhz * 1e6, rigmodes[s.mode], audio, fs, s.label)
+        self.radio.transmit(s.rig_hz, rigmodes[s.mode], audio, fs, s.label)
 
     def _clear(self, cs):
         for _ in range(int(cs.get("retries", 3)) + 1):

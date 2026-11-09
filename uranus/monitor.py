@@ -18,7 +18,7 @@ import wave
 
 import numpy as np
 
-from . import spots, urcoherent, urmode
+from . import sdr, spots, urcoherent, urmode
 
 log = logging.getLogger("uranus.listen")
 FS = 12000
@@ -52,6 +52,8 @@ class Listener:
         self.dial_hz = float(rx.get("dial_mhz", 144.490)) * 1e6
         self.f0 = float(rx.get("audio_offset_hz", st.get("audio_offset_hz", 1500)))
         self.device = rx.get("audio_device", "default")
+        self.source = rx.get("source", "audio")
+        self.rtl_ppm, self.rtl_gain = rx.get("rtl_ppm", 0), rx.get("rtl_gain", 40)
         self.reporter = reporter
         self.spot_path = spot_path
         self.stop = threading.Event()
@@ -85,7 +87,10 @@ class Listener:
                 self.stop.wait(min(0.5, start - 0.3 - time.time()))
             if self.stop.is_set():
                 break
-            x = record(self.frame_s + 4.5, self.device)
+            if self.source == "rtl_fm":
+                x = sdr.rtl_record(self.frame_s + 4.5, self.dial_hz, self.rtl_ppm, self.rtl_gain)
+            else:
+                x = record(self.frame_s + 4.5, self.device)
             mode, res = self.decode(x)
             for r in res:
                 extra = {k: r[k] for k in ("fade_db", "spread_hz") if k in r}

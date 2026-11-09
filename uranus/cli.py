@@ -121,6 +121,12 @@ def main(argv=None):
         rc = cfg["radio"]
         if args.dry_run or rc.get("backend", "dry-run") == "dry-run":
             radio = DryRunRadio()
+        elif rc.get("backend") == "hackrf":
+            from .sdr import HackRFRadio
+            sd = cfg.get("sdr", {})
+            radio = HackRFRadio(sd.get("hackrf_txvga", 10), sd.get("hackrf_amp", False),
+                                sd.get("sample_rate", 2_400_000), sd.get("offset_hz", 200_000),
+                                rc.get("max_tx_s", 320))
         else:
             radio = HamlibRadio(rc["rigctld_host"], rc["rigctld_port"],
                                 rc.get("audio_device", "default"), max_tx_s=rc.get("max_tx_s", 320))

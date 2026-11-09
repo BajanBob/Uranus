@@ -40,6 +40,8 @@ DIST = {"tropo_scatter": (250, 0.30), "ducting": (600, 0.30), "aircraft": (450, 
 
 PRIOR = {"2m": {"los": 1.0, "tropo_scatter": 1.0, "ducting": 0.8, "aircraft": 0.5, "meteor": 0.35,
                 "es": 0.45, "tep": 0.2},
+         "1.25m": {"los": 1.0, "tropo_scatter": 1.0, "ducting": 0.85, "aircraft": 0.55, "meteor": 0.25,
+                   "es": 0.08, "tep": 0.06},
          "70cm": {"los": 1.0, "tropo_scatter": 1.0, "ducting": 0.9, "aircraft": 0.55, "meteor": 0.12,
                   "es": 0.01, "tep": 0.03}}
 
@@ -48,6 +50,8 @@ def band_of(freq_hz):
     f = (freq_hz or 0) / 1e6
     if 144 <= f <= 148:
         return "2m"
+    if 219 <= f <= 225:
+        return "1.25m"
     if 420 <= f <= 450:
         return "70cm"
     return "?"
@@ -110,6 +114,8 @@ def classify(home, remote, band, utc_ts, snr=None, fade_db=None, spread_hz=None,
         why["ducting"].append("ducting favours 70 cm as much as 2 m")
     if band == "2m":
         why["es"].append("sporadic-E reaches 2 m (almost never 70 cm)")
+    if band == "1.25m":
+        why["ducting"].append("1.25 m ducts much like 2 m, with a quieter noise floor")
 
     # time of day and season
     night = _bump(hr, 18, 24, 2.5) if hr >= 12 else _bump(hr, 0, 9, 2.5)
