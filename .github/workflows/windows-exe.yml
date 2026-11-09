@@ -1,4 +1,4 @@
-name: Build Windows executables
+name: Build release packages
 
 on:
   push:
@@ -58,6 +58,19 @@ jobs:
           name: Uranus-Windows-exe
           path: Uranus-Windows-exe.zip
 
+      - name: Build Raspberry Pi and Linux zips
+        shell: pwsh
+        run: |
+          foreach ($t in "RaspberryPi", "Linux") {
+            $d = "Uranus-$t"
+            New-Item -ItemType Directory -Force $d | Out-Null
+            git archive HEAD | tar -x -C $d
+            Remove-Item -Recurse -Force "$d/windows", "$d/.github" -ErrorAction SilentlyContinue
+            $first = if ($t -eq "RaspberryPi") { "linux/install-pi.sh" } else { "linux/install-linux.sh" }
+            "Uranus for $t`r`n`r`nUnzip, then run:  bash $first`r`nSee README.md for everything else." | Set-Content "$d/START-HERE.txt"
+            Compress-Archive -Path $d -DestinationPath "$d.zip" -Force
+          }
+
       - name: Read version
         id: ver
         shell: pwsh
@@ -71,9 +84,15 @@ jobs:
         with:
           tag_name: v${{ steps.ver.outputs.version }}
           target_commitish: ${{ github.sha }}
-          name: Uranus v${{ steps.ver.outputs.version }} for Windows
+          name: Uranus v${{ steps.ver.outputs.version }}
           body: |
-            Download Uranus-Windows-exe.zip, unzip it and double-click Uranus.exe (no Python needed).
-            WhisperMite-Setup.exe is in the WhisperMite folder. See README-WINDOWS.txt inside.
-          files: Uranus-Windows-exe.zip
+            Windows: Uranus-Windows-exe.zip - unzip and double-click Uranus.exe (no Python needed).
+            Raspberry Pi: Uranus-RaspberryPi.zip - unzip and run  bash linux/install-pi.sh
+            Linux: Uranus-Linux.zip - unzip and run  bash linux/install-linux.sh
+            New: listen mode, station map (blue online / red offline), PSK Reporter upload.
+            Free software under GPL-3.0. Testers wanted worldwide: report results under Issues.
+          files: |
+            Uranus-Windows-exe.zip
+            Uranus-RaspberryPi.zip
+            Uranus-Linux.zip
           make_latest: true

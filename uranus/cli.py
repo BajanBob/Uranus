@@ -11,6 +11,8 @@
   python -m uranus urc-decode in.wav --submode URC-60 [--df-max 0.6] [--expect CALL GRID]
   python -m uranus urc-loopback --submode URC-15 --snr -23
   python -m uranus link-budget --watts 10 --mhz 144.49 --km 150 --tx-gain 10 --rx-gain 13
+  python -m uranus listen [--slots N]       decode URC/UR from the rig, log spots, report to PSK Reporter
+  python -m uranus map [--psk] [--demo]     build out/map.html (blue online, red offline)
 """
 
 import argparse
@@ -21,7 +23,10 @@ import wave
 
 import numpy as np
 
-from . import aprs, linkbudget, scheduler, sim, urcoherent, urmode
+import os
+import webbrowser
+
+from . import aprs, linkbudget, mapgen, monitor, pskreporter, scheduler, sim, spots, urcoherent, urmode
 from .radio import DryRunRadio, HamlibRadio, write_wav
 
 
@@ -91,11 +96,19 @@ def main(argv=None):
     a.add_argument("--nf", type=float, default=1.0, help="receiver noise figure dB")
     a.add_argument("--sky-k", type=float, default=None)
     a.add_argument("--example", action="store_true", help="show a reference 2 m tropo path")
+    a = sub.add_parser("listen")
+    a.add_argument("--slots", type=int, default=None, help="stop after N slots")
+    a = sub.add_parser("map")
+    a.add_argument("--psk", action="store_true", help="also fetch who heard us from PSK Reporter")
+    a.add_argument("--hours", type=float, default=24, help="history to include")
+    a.add_argument("--demo", action="store_true", help="sample stations, clearly labelled")
+    a.add_argument("--open", action="store_true", help="open the map in a browser")
+    a.add_argument("--out", default=os.path.join("out", "map.html"))
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s")
 
-    if args.cmd in ("plan", "run", "aprs-wav"):
+    if args.cmd in ("plan", "run", "aprs-wav", "listen", "map"):
         cfg, slots = scheduler.load_config(args.config)
 
     if args.cmd == "plan":
@@ -181,6 +194,42 @@ def main(argv=None):
         print("margin per mode (positive = should decode):")
         for m, v in b["margins_db"].items():
             print(f"  {m:10s} {v:+6.1f} dB")
+    elif args.cmd == "listen":
+        rep_cfg = cfg.get("reporting", {})
+        reporter = None
+        if rep_cfg.get("pskreporter", False):
+            reporter = pskreporter.Reporter(cfg["station"]["callsign"], cfg["station"]["grid"],
+                                            test=rep_cfg.get("pskreporter_test_server", True))
+        lis = monitor.Listener(cfg, reporter)
+        try:
+            lis.run(args.slots)
+        finally:
+            if reporter:
+                reporter.flush()
+    elif args.cmd == "map":
+        st = cfg["station"]
+        rep_cfg = cfg.get("reporting", {})
+        home = st.get("grid6") or st["grid"]
+        if args.demo:
+            data, note = mapgen.demo_spots(), mapgen.DEMO_NOTE
+        else:
+            data, note = spots.load(since_s=args.hours * 3600), ""
+            if args.psk:
+                try:
+                    heard = pskreporter.heard_by(st["callsign"], int(args.hours * 3600),
+                                                 rep_cfg.get("pskreporter_contact"))
+                    print(f"PSK Reporter: {len(heard)} report(s) of {st['callsign']}")
+                    data += heard
+                except Exception as e:      # noqa: BLE001
+                    print(f"PSK Reporter lookup failed: {e}")
+        stations = mapgen.aggregate(data, home, rep_cfg.get("online_minutes", 30))
+        os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
+        with open(args.out, "w", encoding="utf-8") as f:
+            f.write(mapgen.render(stations, st["callsign"], home, note=note,
+                                  online_min=rep_cfg.get("online_minutes", 30)))
+        print(f"wrote {args.out}: {len(stations)} station(s)")
+        if args.open:
+            webbrowser.open("file://" + os.path.abspath(args.out))
     elif args.cmd == "ur-sim":
         es = np.arange(0.0, 6.1, 0.5)
         rows = {"plain": sim.ideal_sync_curve(es, args.trials),

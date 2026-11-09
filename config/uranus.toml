@@ -10,7 +10,8 @@
 
 [station]
 callsign = "N0CALL"          # your callsign (UR mode and WSPR: max 6 chars, no /)
-grid = "GK03"                # 4-char Maidenhead locator
+grid = "GK03"                # 4-char Maidenhead locator (sent on air)
+grid6 = "GK03ec"             # 6-char locator for map distances (optional)
 lat = 13.10                  # APRS position (decimal degrees, + = N / E)
 lon = -59.60
 aprs_ssid = 11               # -11 = balloon/aircraft/beacon convention; 0 = none
@@ -20,6 +21,19 @@ aprs_symbol = "-"
 aprs_comment = "Uranus beacon"
 wspr_power_dbm = 37          # REAL power you send, in dBm (37 = 5 W)
 audio_offset_hz = 1500
+
+[receive]                    # listen mode
+mode = "urc"                 # "urc" or "ur"
+submode = "URC-60"
+dial_mhz = 144.490
+audio_offset_hz = 1500
+audio_device = "default"     # rig's USB audio INPUT (see list-audio-devices)
+
+[reporting]
+pskreporter = false          # upload your URC/UR decodes to PSK Reporter
+pskreporter_test_server = true   # true = PSK Reporter's test port; set false when you are happy
+pskreporter_contact = ""     # optional e-mail PSK Reporter asks query clients to supply
+online_minutes = 30          # map: blue if heard within this many minutes, else red
 
 [timing]
 gap_between_tx_s = 60        # 1 minute between transmissions in a band

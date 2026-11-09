@@ -133,7 +133,7 @@ footer { padding: 26px 0 40px; border-top: 2px solid var(--ink); font: .8rem var
   <div class="wrap">
     <b>URANUS</b>
     <span>Press release · For immediate release</span>
-    <span>v0.2.0 · 8 November 2026</span>
+    <span>v0.3.0 · 9 November 2026</span>
   </div>
 </header>
 
@@ -156,7 +156,7 @@ footer { padding: 26px 0 40px; border-top: 2px solid var(--ink); font: .8rem var
 <section>
   <div class="wrap twocol">
     <div class="lede measure">
-      <p><span class="dateline">BRIDGETOWN, BARBADOS — 8 November 2026.</span> The Uranus project, led by Kammie Holder, 8P5AB, today released version 0.2.0 of its free beacon software for the 2 m and 70 cm amateur radio bands. The release introduces <strong>URC</strong>, a coherent weak-signal mode that recovers its carrier from known pilot symbols and demodulates it coherently.</p>
+      <p><span class="dateline">BRIDGETOWN, BARBADOS — 8 November 2026.</span> The Uranus project, led by Kammie Holder, 8P5AB, today released version 0.3.0 of its free beacon software for the 2 m and 70 cm amateur radio bands. The release introduces <strong>URC</strong>, a coherent weak-signal mode that recovers its carrier from known pilot symbols and demodulates it coherently.</p>
       <p>In full audio testing, where the decoder must find the signal's timing and frequency on its own, URC-60 decoded at −30.8 dB and URC-15 at −24.7 dB. That is 2.7 to 4.0 dB better than WSJT-X's FST4 at the same slot length and the same transmitter peak power.</p>
       <p>That puts URC ahead of the published FT8, FST4 and Q65 figures for the same slot length, whenever the receiving station has no prior knowledge of the caller.</p>
     </div>
@@ -213,14 +213,16 @@ footer { padding: 26px 0 40px; border-top: 2px solid var(--ink); font: .8rem var
 
 <section>
   <div class="wrap">
-    <h2>What's in v0.2.0</h2>
+    <h2>What's in v0.3.0</h2>
     <div class="feats">
       <div class="feat"><h3>Band and mode sequencer</h3><p>2 m APRS, FT8, WSPR and URC, a 3-minute pause, then 70 cm. Each slot is aligned to its UTC boundary, with 1 minute between transmissions.</p></div>
       <div class="feat"><h3>URC coherent mode</h3><p>Pilot-aided carrier recovery, constant-envelope MSK and a soft Viterbi decoder. Five submodes from 13 s to 4.4 min on air.</p></div>
       <div class="feat"><h3>UR noncoherent mode</h3><p>4-GFSK with a priori decoding and repeat stacking, for stations without a GPSDO.</p></div>
       <div class="feat"><h3>Link-budget tool</h3><p>A P/N0 link budget for your station that shows the margin in every mode before you go on air.</p></div>
+      <div class="feat"><h3>Live station map</h3><p>See who is on the air: each station's grid, distance, bearing and SNR, blue when heard in the last 30 minutes, red when not. Solid, dashed and thick lines show who heard whom.</p></div>
+      <div class="feat"><h3>PSK Reporter uploads</h3><p>Listen mode decodes URC every slot and can upload each decode to PSK Reporter, so URC spots appear alongside other modes worldwide.</p></div>
+      <div class="feat"><h3>Pi, Linux and Windows</h3><p>Ready-made downloads for all three: Uranus.exe for Windows, plus one-command installers for Raspberry Pi and Linux.</p></div>
       <div class="feat"><h3>Listen before transmit</h3><p>APRS waits for a clear channel using the rig's S-meter, so the beacon does not transmit over other stations.</p></div>
-      <div class="feat"><h3>Uranus.exe for Windows</h3><p>A double-click control window, no Python required. It also runs on a Raspberry Pi with any Hamlib-controlled rig.</p></div>
     </div>
   </div>
 </section>
@@ -249,7 +251,7 @@ footer { padding: 26px 0 40px; border-top: 2px solid var(--ink); font: .8rem var
     <div class="need">
       <div><h3>What you need</h3><p>A 2 m or 70 cm all-mode rig with CAT control and USB audio, and a PC or Raspberry Pi. For URC, a GPS-disciplined oscillator; without one, run UR, FT8 and WSPR.</p></div>
       <div><h3>What to do</h3><p>Transmit or listen for URC-60 alongside FST4W-120 or Q65-60A on the same path, so the modes can be compared like for like.</p></div>
-      <div><h3>How to report</h3><p>Open an issue on the GitHub page with your callsign, grid, path, the decode SNR of each mode and any recordings. Every report shapes the next release.</p></div>
+      <div><h3>How to report</h3><p>Turn on PSK Reporter uploads so your decodes appear on the map automatically, and open an issue on the GitHub page with your path, the decode SNR of each mode and any recordings.</p></div>
     </div>
     <div class="cta"><a class="primary" href="https://github.com/BajanBob/Uranus/issues">Report a test</a></div>
   </div>
@@ -259,7 +261,7 @@ footer { padding: 26px 0 40px; border-top: 2px solid var(--ink); font: .8rem var
   <div class="wrap twocol">
     <div class="measure">
       <h2>Get Uranus</h2>
-      <p>Free for every amateur. Download <span class="mono">Uranus-Windows-exe.zip</span> from the release page and double-click <span class="mono">Uranus.exe</span>, or install from source on a Raspberry Pi.</p>
+      <p>Free for every amateur. From the release page: <span class="mono">Uranus-Windows-exe.zip</span> (double-click <span class="mono">Uranus.exe</span>), <span class="mono">Uranus-RaspberryPi.zip</span> or <span class="mono">Uranus-Linux.zip</span> (run the installer inside).</p>
       <div class="cta">
         <a class="primary" href="https://github.com/BajanBob/Uranus/releases/latest">Download the latest release</a>
         <a href="https://github.com/BajanBob/Uranus">Source on GitHub</a>

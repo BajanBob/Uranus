@@ -2,7 +2,9 @@ import unittest
 
 import numpy as np
 
-from uranus import aprs, fec, linkbudget, scheduler, urcoherent, urmode, wsjt
+import struct
+
+from uranus import aprs, fec, geo, linkbudget, mapgen, pskreporter, scheduler, urcoherent, urmode, wsjt
 
 
 class TestFEC(unittest.TestCase):
@@ -73,6 +75,47 @@ class TestLinkBudget(unittest.TestCase):
         b = linkbudget.example()
         self.assertAlmostEqual(b["snr2500_db"], b["p_n0_dbhz"] - 33.98, delta=0.01)
         self.assertLess(b["path_loss_db"], 230)
+
+
+class TestGeo(unittest.TestCase):
+    def test_grid_roundtrip(self):
+        self.assertEqual(geo.latlon_to_grid(13.1, -59.6), "GK03ec")
+        lat, lon = geo.grid_to_latlon("GK03ec")
+        self.assertAlmostEqual(lat, 13.1, delta=0.05)
+        self.assertAlmostEqual(lon, -59.6, delta=0.05)
+
+    def test_distance(self):
+        # Barbados to St Lucia is about 170 km
+        self.assertAlmostEqual(geo.distance_km((13.1, -59.6), (13.9, -61.0)), 170, delta=10)
+
+
+class TestPSKReporter(unittest.TestCase):
+    def test_ipfix_structure(self):
+        sp = [{"call": "K1ABC", "grid": "FN42", "snr": -27.3, "freq_hz": 144491500, "mode": "URC", "time": 1_800_000_000}]
+        pkt = pskreporter.build_packet("8P5AB", "GK03ec", sp, 0, 1234)
+        ver, length = struct.unpack(">HH", pkt[:4])
+        self.assertEqual((ver, length), (10, len(pkt)))
+        pos, sets = 16, []
+        while pos < len(pkt):
+            sid, slen = struct.unpack(">HH", pkt[pos:pos + 4])
+            self.assertEqual(slen % 4, 0)
+            sets.append(sid)
+            pos += slen
+        self.assertEqual(pos, len(pkt))
+        self.assertEqual(sets, [3, 2, 0x9992, 0x9993])
+        self.assertIn(b"URC", pkt)
+
+
+class TestMap(unittest.TestCase):
+    def test_aggregate_and_render(self):
+        st = mapgen.aggregate(mapgen.demo_spots(), "GK03ec")
+        self.assertEqual(len(st), 8)
+        both = [s for s in st if s["call"] == "SAMPLE3"][0]
+        self.assertEqual(both["dirs"], ["heard", "rx"])
+        self.assertTrue(both["online"])
+        html = mapgen.render(st, "8P5AB", "GK03ec", note=mapgen.DEMO_NOTE)
+        self.assertIn("SAMPLE DATA", html)
+        self.assertNotIn("__DATA__", html)
 
 
 class TestAPRS(unittest.TestCase):

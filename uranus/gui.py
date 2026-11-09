@@ -86,6 +86,9 @@ class App(tk.Tk):
                                               "--km", "200", "--extra-loss", "25",
                                               "--tx-gain", "10", "--rx-gain", "13"])),
             ("400 km example", lambda: self.cli(["link-budget", "--example"])),
+            ("Listen (decode)", self.listen),
+            ("Station map", lambda: self.cli(["map", "--psk", "--open"])),
+            ("Map demo", lambda: self.cli(["map", "--demo", "--open"])),
             ("Open output folder", self.open_out),
         ]:
             ttk.Button(bar2, text=text, command=cmd).pack(side="left", padx=3, pady=3)
@@ -185,6 +188,24 @@ class App(tk.Tk):
             self.runner.run()
         self.print("\n> ON AIR\n")
         self.start(go, "ON AIR - transmitting on schedule. Press Stop to end.", "#ffb3b3")
+
+    def listen(self):
+        def go():
+            from . import monitor, pskreporter, scheduler
+            cfg, _ = scheduler.load_config(CONFIG)
+            rc = cfg.get("reporting", {})
+            rep = None
+            if rc.get("pskreporter", False):
+                rep = pskreporter.Reporter(cfg["station"]["callsign"], cfg["station"]["grid"],
+                                           test=rc.get("pskreporter_test_server", True))
+            self.runner = monitor.Listener(cfg, rep)
+            try:
+                self.runner.run()
+            finally:
+                if rep:
+                    rep.flush()
+        self.print("\n> listen: decoding URC from the rig; spots go to out/spots.jsonl\n")
+        self.start(go, "LISTENING - decodes appear below. Press Stop to end.", "#cfe3ff")
 
     def stop(self):
         if self.runner:

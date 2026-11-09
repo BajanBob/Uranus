@@ -62,6 +62,31 @@ rigctld -m <rig model> -r /dev/ttyUSB0 -s 19200 &
 python3 -m uranus run                  # on air
 ```
 
+### Listen, station map and PSK Reporter
+
+```bash
+python3 -m uranus listen                    # decode URC/UR from the rig every slot, log to out/spots.jsonl
+python3 -m uranus map --psk --open          # map: blue = heard in the last 30 min, red = earlier
+python3 -m uranus map --demo --open         # the same map with clearly labelled sample stations
+```
+
+The map shows each station's grid, distance, bearing and last/best SNR.
+Solid lines mean you decoded them, dashed lines mean they decoded you
+(from PSK Reporter), and thick lines mean both. Online it draws on
+OpenStreetMap; offline it falls back to a Maidenhead-grid map.
+
+Set `pskreporter = true` under `[reporting]` to upload your URC/UR decodes
+to PSK Reporter (start with its test server, the default). WSPRnet only
+accepts WSPR/FST4W, so URC spots are not sent there.
+
+### Downloads
+
+From the latest GitHub Release:
+
+* **Windows:** `Uranus-Windows-exe.zip`. Double-click `Uranus.exe`.
+* **Raspberry Pi:** `Uranus-RaspberryPi.zip`. Run `bash linux/install-pi.sh`.
+* **Linux:** `Uranus-Linux.zip`. Run `bash linux/install-linux.sh`.
+
 ### UR mode tools
 
 ```bash
