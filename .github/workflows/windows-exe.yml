@@ -138,7 +138,7 @@ jobs:
             Windows: Uranus-Windows-exe.zip - unzip and double-click Uranus.exe (no Python needed).
             Raspberry Pi: Uranus-RaspberryPi.zip - unzip and run  bash linux/install-pi.sh
             Linux: Uranus-Linux.zip - unzip and run  bash linux/install-linux.sh
-            New in this version: HF and 6 m - FT8 and WSPR on 160-6 m, HF APRS (300 baud, 30 m 10.1476 and 20 m) for HF radios such as the IC-9100; older settings gain the new bands automatically (switched off). ON AIR decodes between transmissions.
+            New in this version: AUTO decoding - Uranus identifies every signal in the passband by its signature (FT8, FT4, WSPR, JT65, APRS, HF packet, RTTY, PSK31, CW, carriers, voice, Pumpkin, UR), tags it on the waterfall with the reasons, and sends it to the right decoder. See docs/SIGNAL-ID.md.
             Free software under GPL-3.0. Testers wanted worldwide: report results under Issues.
           files: |
             Uranus-Windows-exe.zip

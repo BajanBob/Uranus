@@ -309,6 +309,8 @@ class App(tk.Tk):
         self.ticker_items = []               # "heard" messages scrolling along the bottom
         self.heard_seen = set()
         self.heard_calls = set()             # stations heard this session, so busy modes alert only once each
+        self.ident_seen = set()              # signal types identified this session (AUTO)
+        self.wf_tags = []
         self.next_heard_poll = time.time() + 120
         self.wf_rows = []                    # waterfall rows from the audio thread
         self.wf_img = None
@@ -524,12 +526,15 @@ class App(tk.Tk):
         sel.pack(fill="x")
         ttk.Label(sel, text="Decode", style="CardMuted.TLabel").pack(side="left")
         from . import cucumber, pumpkin, urmode
-        subs = ["FT8", "WSPR", "APRS"] + list(pumpkin.SUBMODES) + list(cucumber.SUBMODES) + list(urmode.SUBMODES)
+        subs = ["AUTO", "FT8", "WSPR", "APRS"] + list(pumpkin.SUBMODES) + list(cucumber.SUBMODES) + list(urmode.SUBMODES)
         self.v_sub = tk.StringVar(value="PUMPKIN-60")
         cb = ttk.Combobox(sel, textvariable=self.v_sub, values=subs, state="readonly", width=13)
         cb.pack(side="left", padx=6)
         cb.bind("<<ComboboxSelected>>", lambda e: self.save_listen(mode_changed=True))
-        Tooltip(cb, "What Listen + decode looks for.\nFT8 and WSPR: decoded with WSJT-X's own decoders (install WSJT-X)."
+        Tooltip(cb, "What Listen + decode looks for.\nAUTO: identify every signal in the passband by its signature "
+                    "(FT8, FT4, WSPR, JT65, APRS, HF packet, RTTY, PSK31, CW, carriers, voice, Pumpkin, UR) and "
+                    "send each to the right decoder by itself."
+                    "\nFT8 and WSPR: decoded with WSJT-X's own decoders (install WSJT-X)."
                     "\nAPRS: built-in 1200-baud packet decoder, listens all the time (FM-D, squelch open)."
                     "\nPUMPKIN: SSB rig (USB-D), most sensitive, needs a GPS-locked "
                     "radio at both ends.\nCUCUMBER: any FM radio (FM-D, squelch open), no GPS needed.\nUR: SSB, "
@@ -569,6 +574,9 @@ class App(tk.Tk):
     def _dial_options(self, sub):
         from . import freqplan
         mode = MODE_OF[sub.split("-")[0]]
+        if mode == "auto":
+            return [f"{freqplan.fmt(o.mhz)}   {freqplan.BAND_NAMES[o.band]} · {o.mode.upper()} · {o.note}"
+                    for o in sorted(freqplan.PLAN, key=lambda o: o.mhz)]
         return [f"{freqplan.fmt(o.mhz)}   {freqplan.BAND_NAMES[o.band]} · {o.status} · {o.note}"
                 for b in freqplan.BAND_EDGES for o in freqplan.options(b, mode)]
 
@@ -577,7 +585,7 @@ class App(tk.Tk):
         mode = MODE_OF[sub.split("-")[0]]
         if hasattr(self, "dial_cb"):
             self.dial_cb.config(values=self._dial_options(sub))
-        if mode_changed:
+        if mode_changed and mode != "auto":
             self.v_dial.set({"pumpkin": "144.490", "ur": "144.490", "ft8": "144.174", "wspr": "144.489",
                              "aprs": "144.390"}.get(mode, self._cucumber_freq()))
         try:
@@ -619,6 +627,10 @@ class App(tk.Tk):
                     self.on_decode(e["spot"])
                 elif t == "text":
                     self.add_ticker(f"TEXT  {e['text']}  ({e['snr']:+.0f} dB, {e['mode']})", alert=True)
+                elif t == "identified":
+                    self.on_identified(e["items"])
+                elif t == "following":
+                    self.add_ticker(f"AUTO: following {e['mode']} at {e['freq_hz']:.0f} Hz for one slot", log=False)
                 elif t == "message":
                     new = bool(e.get("call")) and e["call"] not in self.heard_calls
                     if e.get("call"):
@@ -678,13 +690,39 @@ class App(tk.Tk):
             self.dec_bar.coords(self.dec_fill, 0, 0, w * done, 10)
         elif t == "decoding":
             self.dec_head.config(text=f"Decoding · {where}", fg=C["amber"])
-            self.dec_line.config(text=f"Searching the recording for {sub} signals"
-                                      + (" with WSJT-X's decoder..." if sub in ("FT8", "WSPR") else "..."))
+            self.dec_line.config(text="Identifying signals by their signatures, then decoding..." if sub == "AUTO"
+                                 else f"Searching the recording for {sub} signals"
+                                 + (" with WSJT-X's decoder..." if sub in ("FT8", "WSPR") else "..."))
             self.dec_bar.itemconfig(self.dec_fill, fill=C["amber"])
             self.dec_bar.coords(self.dec_fill, 0, 0, w, 10)
         elif t == "result":
             self.dec_head.config(text=f"Listening · {where}", fg=C["blue"])
             self.dec_line.config(text="Next slot starting shortly.")
+
+    # ---------------------------------------------------------- AUTO: identified signals
+    def on_identified(self, items):
+        known = [i for i in items if i["mode"] != "Unknown"]
+        for tag in self.wf_tags:
+            self.wf.delete(tag)
+        self.wf_tags = []
+        for i in items[:6]:
+            x = max(4, min(self.WF_W - 4, i["freq_hz"] / 3000 * (self.WF_W - 1)))
+            col = C["orange"] if i["mode"] != "Unknown" else C["muted"]
+            label = f"{i['mode'].split(' ')[0]} {i['confidence']:.0%}" if i["mode"] != "Unknown" else "?"
+            self.wf_tags.append(self.wf.create_line(x, 0, x, 8, fill=col, width=2))
+            self.wf_tags.append(self.wf.create_text(min(max(x, 30), self.WF_W - 30), 16, text=label, fill=col,
+                                                    font=(UI, 8, "bold")))
+        if known:
+            lines = [f"{i['mode']:<20} {i['freq_hz']:>5.0f} Hz  {i['confidence']:>4.0%}  "
+                     + "; ".join(i["reasons"][:3]) for i in known[:4]]
+            self.dec_last.config(text="Signals in the passband:\n" + "\n".join(lines), fg=C["ink"])
+        elif items:
+            self.dec_last.config(text=f"{len(items)} signal(s), none matching a known signature yet", fg=C["muted"])
+        for i in known:
+            if i["mode"] not in self.ident_seen and i["confidence"] >= 0.5:
+                self.ident_seen.add(i["mode"])
+                self.add_ticker(f"IDENTIFIED {i['mode']} at {i['freq_hz']:.0f} Hz ({i['confidence']:.0%}): "
+                                + ", ".join(i["reasons"][:2]), log=False)
 
     # ---------------------------------------------------------- decodes: alert + ticker
     def _home(self):
@@ -998,7 +1036,7 @@ class App(tk.Tk):
         self.update_psk()
         if hasattr(self, "v_sub"):
             sub = rx.get("submode", "PUMPKIN-60")
-            if rx.get("mode") in ("ft8", "wspr", "aprs"):
+            if rx.get("mode") in ("ft8", "wspr", "aprs", "auto"):
                 sub = rx["mode"].upper()
             if sub.startswith("URC-"):
                 sub = "PUMPKIN-" + sub.split("-")[1]
@@ -1145,6 +1183,11 @@ class App(tk.Tk):
                     from .radio import HamlibRadio
                     print(rigctl.ensure(cfg))
                     rig_mode = "FM" if rx.get("mode") in ("cucumber", "aprs") else "USB"
+                    if rx.get("mode") == "auto":
+                        from . import freqplan
+                        d = float(rx.get("dial_mhz", 144.49))
+                        fm = any(o.mode in ("aprs", "cucumber") and abs(o.mhz - d) < 0.002 for o in freqplan.PLAN)
+                        rig_mode = "FM" if fm and d >= 30 else "USB"
                     if float(rx.get("dial_mhz", 144.49)) < 30.0:
                         rig_mode = "USB"                       # HF: APRS is 300 baud on USB
                     r = HamlibRadio(rc["rigctld_host"], rc["rigctld_port"], rc.get("audio_device", "default"), data_mode=rc.get("data_mode", True))
@@ -1609,7 +1652,8 @@ def test_radio_async(widget, cfg, done):
     threading.Thread(target=go, daemon=True).start()
 
 
-MODE_OF = {"PUMPKIN": "pumpkin", "CUCUMBER": "cucumber", "UR": "ur", "FT8": "ft8", "WSPR": "wspr", "APRS": "aprs"}
+MODE_OF = {"PUMPKIN": "pumpkin", "CUCUMBER": "cucumber", "UR": "ur", "FT8": "ft8", "WSPR": "wspr", "APRS": "aprs",
+           "AUTO": "auto"}
 
 MODE_HELP = {
     "aprs": "APRS position beacon. VHF/UHF: FM, 1200 baud, heard by digipeaters and i-gates (aprs.fi). "

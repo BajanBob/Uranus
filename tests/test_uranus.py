@@ -442,6 +442,85 @@ class TestBandsRadiosSDR(unittest.TestCase):
         pkt = aprs_rx.parse_frame(aprs_rx.decode_audio(x, 12000, hf=True)[0])
         self.assertEqual((pkt["source"], pkt["path"]), ("8P5AB-11", []))     # no digipeater path on HF
 
+    def _sig_place(self, sig, start_s, total_s, snr_db, rng):
+        fs = 12000
+        x = np.zeros(int(total_s * fs))
+        s0 = int(start_s * fs)
+        n = min(len(sig), len(x) - s0)
+        x[s0:s0 + n] = sig[:n]
+        x = x / np.sqrt(np.mean(sig ** 2)) * np.sqrt(2500 / 6000) * 10 ** (snr_db / 20)
+        return x + rng.normal(0, 1, len(x))
+
+    def test_signal_identification_by_signature(self):
+        from uranus import aprs, signalid as sid
+        rng, fs = np.random.default_rng(11), 12000
+        t0 = 1_700_000_040.0                                  # a 120-second boundary (WSPR) and 15 s (FT8)
+        def gfsk(n, sp, baud, f0, M, costas=None):
+            tones = rng.integers(0, M, n)
+            if costas is not None:
+                for st in (0, 36, 72):
+                    tones[st:st + 7] = costas
+            return wsjt.gfsk(tones, int(fs / baud), sp, f0, bt=2.0)
+        sym = pumpkin.message_to_symbols("8P5AB", "GK03")
+        t = np.arange(12 * fs) / fs
+        key = np.zeros_like(t)
+        pos = 0.5
+        for el in [1, 3, 1, 1, 3, 3, 1, 1, 1, 3, 1, 3, 3, 1]:
+            key[int(pos * fs):int((pos + el * 0.08) * fs)] = 1
+            pos += el * 0.08 + 0.08
+        bits = rng.integers(0, 2, int(10 * 45.45))
+        rtty = np.sin(2 * np.pi * np.cumsum(np.repeat(np.where(bits, 2125, 2295), int(fs / 45.45))) / fs)
+        cases = {
+            "FT8": (gfsk(79, 6.25, 6.25, 1200, 8, [3, 1, 4, 0, 6, 5, 2]), 0.5, 15, -12, t0),
+            "WSPR": (gfsk(162, 1.4648, 1.4648, 1500, 4), 1.0, 120, -18, t0),
+            "PUMPKIN-15": (pumpkin.modulate(sym, "PUMPKIN-15"), 1.0, 15, -5, t0),
+            "PUMPKIN-60": (pumpkin.modulate(sym, "PUMPKIN-60"), 1.0, 60, -14, t0),
+            "UR-15": (urmode.modulate(urmode.message_to_tones("8P5AB", "GK03"), "UR-15"), 1.0, 15, -5, t0),
+            "CW": (np.sin(2 * np.pi * 700 * t) * np.convolve(key, np.ones(48) / 48, "same"), 0, 12, 0, None),
+            "Carrier": (np.sin(2 * np.pi * 1000 * t), 0, 12, -5, None),
+            "RTTY": (rtty, 1, 12, 5, None),
+            "APRS / packet 1200": (aprs.packet_audio("8P5AB", aprs.position_info(13.1, -59.6), fs=fs), 2, 8, 10, None),
+        }
+        for want, (sig, start, total, snr, tt) in cases.items():
+            ds = sid.identify(self._sig_place(sig, start, total, snr, rng), t0=tt)
+            self.assertTrue(ds, want)
+            self.assertEqual(ds[0].mode, want, [(d.mode, d.confidence, d.reasons) for d in ds])
+            self.assertTrue(ds[0].reasons)
+        for _ in range(3):                                       # noise alone: nothing identified
+            self.assertEqual([d.mode for d in sid.identify(rng.normal(0, 1, 15 * fs), t0=t0) if d.mode != "Unknown"], [])
+        mem = sid.Memory()                                       # the same signal again gains confidence
+        x = self._sig_place(cases["FT8"][0], 0.5, 15, -12, rng)
+        c1 = mem.update(sid.identify(x, t0=t0), now=1000)[0].confidence
+        d2 = mem.update(sid.identify(x, t0=t0), now=1015)[0]
+        self.assertGreater(d2.confidence, c1)
+        self.assertEqual(d2.seen, 2)
+
+    def test_auto_mode_identifies_and_decodes_aprs(self):
+        import tempfile
+        from uranus import aprs, monitor
+        t = open("config/uranus.toml", encoding="utf-8").read().replace('callsign = "N0CALL"', 'callsign = "8P5AB"', 1)
+        cfg = tomllib.loads(t)
+        cfg["receive"] = {"mode": "auto", "dial_mhz": 144.390}
+        events = []
+        lis = monitor.Listener(cfg, spot_path=tempfile.mktemp(), on_event=events.append)
+        pkt = aprs.packet_audio("W1ABC-9", aprs.position_info(42.36, -71.06), fs=12000)
+        orig = monitor.record
+        monitor.record = lambda sec, device="default", fs=12000: np.concatenate(
+            [np.random.default_rng(2).normal(0, 0.01, 24000), pkt,
+             np.random.default_rng(3).normal(0, 0.01, int(sec * fs))])[:int(sec * fs)]
+        import time as _t
+        real_time = _t.time
+        try:
+            base = (real_time() // 15 + 1) * 15
+            _t.time = lambda: base                              # pretend we are at a slot boundary
+            lis.run(slots=1)
+        finally:
+            _t.time = real_time
+            monitor.record = orig
+        idents = [i["mode"] for e in events if e["type"] == "identified" for i in e["items"]]
+        self.assertIn("APRS / packet 1200", idents)
+        self.assertIn("W1ABC-9", [e["spot"]["call"] for e in events if e["type"] == "decode"])
+
     def test_pskreporter_live_status(self):
         from uranus import pskreporter
         r = pskreporter.Reporter("8P5AB", "GK03", test=True)

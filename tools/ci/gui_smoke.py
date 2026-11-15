@@ -74,6 +74,16 @@ assert len(a.ticker_items) == 2, a.ticker_items
 for _ in range(30):
     a.scroll_ticker()
 a.update_decoder()
+a.on_identified([
+    {"mode": "FT8", "family": "ft8", "freq_hz": 1219, "bw_hz": 50, "confidence": 0.94, "snr_db": -12, "seen": 3,
+     "reasons": ["6.25 baud", "about 8 tones wide", "starts 0.5 s into a 15 s UTC slot"]},
+    {"mode": "PUMPKIN-15", "family": "pumpkin", "freq_hz": 1500, "bw_hz": 24, "confidence": 0.82, "snr_db": -5,
+     "seen": 1, "reasons": ["24.95 baud", "MSK-like spectrum", "13.4 s long"]},
+    {"mode": "Carrier", "family": "", "freq_hz": 2500, "bw_hz": 1, "confidence": 0.72, "snr_db": 3, "seen": 1,
+     "reasons": ["steady, unmodulated"]},
+    {"mode": "Unknown", "family": "", "freq_hz": 700, "bw_hz": 30, "confidence": 0.2, "snr_db": -9, "seen": 1,
+     "reasons": ["30 Hz wide"]}])
+assert len(a.wf_tags) == 8 and "FT8" in a.dec_last.cget("text")
 snap(a, "1-faceplate.png")
 a.runner = None
 
@@ -121,6 +131,9 @@ b2 = [b for b in cfg["band"] if b["name"] == "2m"][0]["slot"]
 assert b2[8]["enabled"] is True and b2[5]["enabled"] is False
 assert abs(b2[8]["freq_mhz"] - 144.285) < 1e-6 and abs(b2[6]["freq_mhz"] - 144.489) < 1e-6, b2
 assert abs(b2[4]["freq_mhz"] - 145.825) < 1e-6, b2
+a.v_sub.set("AUTO")
+a.save_listen(mode_changed=True)
+assert g.load_cfg()["receive"]["mode"] == "auto"
 a.v_sub.set("FT8")
 a.save_listen(mode_changed=True)
 rx = g.load_cfg()["receive"]
