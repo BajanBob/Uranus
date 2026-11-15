@@ -1,6 +1,6 @@
 """FT8 and WSPR audio, using WSJT-X's own reference encoders.
 
-The tone sequences come from the `ft8code` and `wsprcode` programs that ship
+The tone sequences come from the `ft8code`, `ft4code` and `wsprcode` programs that ship
 with WSJT-X (sudo apt install wsjtx). Using the reference encoders guarantees
 on-air compatibility; Uranus only turns the tones into audio and keys the rig.
 """
@@ -68,6 +68,17 @@ def ft8_tones(message):
     return tones
 
 
+FT4_COSTAS = ([0, 1, 3, 2], [1, 0, 2, 3], [2, 3, 1, 0], [3, 2, 0, 1])     # at symbols 0, 33, 66, 99
+
+
+def ft4_tones(message):
+    tones = parse_tones(_run("ft4code", message), 103, 3)
+    for k, start in enumerate((0, 33, 66, 99)):
+        if tones[start:start + 4] != FT4_COSTAS[k]:
+            raise ValueError("ft4code output failed Costas sync check")
+    return tones
+
+
 def wspr_tones(call, grid, dbm):
     return parse_tones(_run("wsprcode", f"{call} {grid} {dbm}"), 162, 3)
 
@@ -90,6 +101,11 @@ def gfsk(tones, nsps, spacing, f0, bt=None, fs=FS, amp=0.5):
 def ft8_audio(message, f0=1500.0):
     """79 symbols x 0.16 s, 6.25 Hz spacing, GFSK BT=2 (12.64 s)."""
     return gfsk(ft8_tones(message), 1920, 6.25, f0, bt=2.0)
+
+
+def ft4_audio(message, f0=1500.0):
+    """103 symbols x 48 ms, 20.833 Hz spacing, GFSK BT=1 (about 5 s)."""
+    return gfsk(ft4_tones(message), 576, FS / 576, f0, bt=1.0)
 
 
 def wspr_audio(call, grid, dbm, f0=1500.0):
@@ -152,15 +168,24 @@ def parse_ft8_message(msg):
 
 def ft8_decode(x, dial_hz, fs=FS, workdir=None):
     """Decode one 15-second FT8 slot with WSJT-X's jt9. Returns dicts: snr, dt, freq_hz, message, call, grid."""
+    return _jt9_decode(x, dial_hz, "-8", "15", 15.0, fs, workdir)
+
+
+def ft4_decode(x, dial_hz, fs=FS, workdir=None):
+    """Decode one 7.5-second FT4 slot with WSJT-X's jt9 (FT4 mode)."""
+    return _jt9_decode(x, dial_hz, "-5", "7", 7.5, fs, workdir)
+
+
+def _jt9_decode(x, dial_hz, flag, period, seconds, fs=FS, workdir=None):
     import tempfile
     exe = decoder_path("jt9")
-    n = 15 * fs
+    n = int(seconds * fs)
     x = np.asarray(x, float)
     x = np.pad(x, (0, max(0, n - len(x))))[:n]
-    d = workdir or tempfile.mkdtemp(prefix="uranus_ft8_")
+    d = workdir or tempfile.mkdtemp(prefix="uranus_jt9_")
     wav = os.path.join(d, "000000_000000.wav")
     _write_wav(wav, x, fs)
-    out = subprocess.run([exe, "-8", "-p", "15", "-d", "3", "-L", "100", "-H", "3200",
+    out = subprocess.run([exe, flag, "-p", period, "-d", "3", "-L", "100", "-H", "3200",
                           "-a", d, "-t", d, wav], capture_output=True, text=True, timeout=60, cwd=d).stdout
     res = []
     for line in out.splitlines():

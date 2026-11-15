@@ -18,6 +18,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y wsjtx
           python -m pip install numpy scipy
-          which jt9 wsprd ft8code wsprcode
+          which jt9 wsprd ft8code ft4code wsprcode
+          jt9 --help 2>&1 | head -40 || true
       - name: Encode with WSJT-X, decode with Uranus
         run: python tools/ci/wsjtx_roundtrip.py

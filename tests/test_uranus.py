@@ -521,6 +521,19 @@ class TestBandsRadiosSDR(unittest.TestCase):
         self.assertIn("APRS / packet 1200", idents)
         self.assertIn("W1ABC-9", [e["spot"]["call"] for e in events if e["type"] == "decode"])
 
+    def test_ft4_slots_and_frequencies(self):
+        from uranus import freqplan as fp
+        s = scheduler.Slot("20m", "ft4", 14.080)
+        self.assertEqual(scheduler.align(1_700_000_000.2, s) % 7.5, 0.5)
+        self.assertAlmostEqual(scheduler.slot_duration(s), 5.04)
+        self.assertEqual(scheduler.rig_mode(s, scheduler.RIG_MODE_DEFAULT), "USB")
+        want = {"80m": 3.575, "40m": 7.0475, "30m": 10.140, "20m": 14.080, "17m": 18.104, "15m": 21.140,
+                "12m": 24.919, "10m": 28.180, "6m": 50.318, "2m": 144.170}
+        for band, mhz in want.items():
+            f = fp.find(band, "ft4", mhz)
+            self.assertIsNotNone(f, band)
+            self.assertEqual(fp.check(band, "ft4", mhz), "", band)
+
     def test_pskreporter_live_status(self):
         from uranus import pskreporter
         r = pskreporter.Reporter("8P5AB", "GK03", test=True)

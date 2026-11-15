@@ -35,8 +35,8 @@ GOING ON AIR (plug and play)
   frequency from the band-plan list (see docs\FREQUENCIES.md).
 - Press Show plan, Dry run, then ON AIR. While ON AIR, Uranus decodes on each
   frequency in the gaps between its own transmissions (like WSJT-X).
-- Listen + decode: choose FT8, WSPR, APRS, Pumpkin, Cucumber or UR in the
-  Receiver panel. FT8 and WSPR use WSJT-X's own decoders (install WSJT-X;
+- Listen + decode: choose AUTO, FT8, FT4, WSPR, APRS, Pumpkin, Cucumber or UR in the
+  Receiver panel. FT8, FT4 and WSPR use WSJT-X's own decoders (install WSJT-X;
   close it while Uranus uses the radio). APRS uses Uranus's built-in decoder. The
   panel shows the slot countdown, "Decoding...", and each slot's result; the
   waterfall shows the radio's audio; every station heard scrolls along the

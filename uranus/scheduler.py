@@ -4,7 +4,7 @@ Order:  every enabled slot of band 1 (in file order), then band 2, ...,
         then start again.
 Gaps:   `gap_between_tx_s` after each transmission inside a band,
         `gap_between_bands_s` after the last transmission of a band.
-Timing: FT8 starts 0.5 s after a 15 s boundary, WSPR 1 s after an even UTC
+Timing: FT8 starts 0.5 s after a 15 s boundary, FT4 0.5 s after a 7.5 s one, WSPR 1 s after an even UTC
         minute, UR-n on its period boundary + 1 s, APRS immediately.
 """
 
@@ -23,8 +23,8 @@ from . import aprs, cucumber, pumpkin, urmode, wsjt
 
 log = logging.getLogger("uranus.scheduler")
 
-DURATION = {"ft8": 12.64, "wspr": 110.6}
-RIG_MODE_DEFAULT = {"aprs": "FM", "ft8": "USB", "wspr": "USB", "ur": "USB", "pumpkin": "USB", "cucumber": "FM"}
+DURATION = {"ft8": 12.64, "ft4": 5.04, "wspr": 110.6}
+RIG_MODE_DEFAULT = {"aprs": "FM", "ft8": "USB", "ft4": "USB", "wspr": "USB", "ur": "USB", "pumpkin": "USB", "cucumber": "FM"}
 LEGACY = {"urc": "pumpkin"}
 
 
@@ -90,6 +90,8 @@ def align(t, slot):
         return t
     if slot.mode == "ft8":
         period, offset = 15, 0.5
+    elif slot.mode == "ft4":
+        period, offset = 7.5, 0.5
     elif slot.mode == "wspr":
         period, offset = 120, 1.0
     elif slot.mode == "pumpkin":
@@ -176,6 +178,8 @@ class Runner:
             return aprs.packet_audio(src, info, path=path, hf=hf), aprs.FS
         if s.mode == "ft8":
             return wsjt.ft8_audio(f"CQ {st['callsign']} {st['grid']}", off), wsjt.FS
+        if s.mode == "ft4":
+            return wsjt.ft4_audio(f"CQ {st['callsign']} {st['grid']}", off), wsjt.FS
         if s.mode == "wspr":
             return wsjt.wspr_audio(st["callsign"], st["grid"], int(st["wspr_power_dbm"]), off), wsjt.FS
         if s.mode == "cucumber":

@@ -118,22 +118,25 @@ a.psk_toggle()
 
 bm = g.BandsModesWindow(a)
 bm.geometry("+60+40")
-bm.v_slot[("2m", 8)].set(True)              # Pumpkin 144.490 on
+bm.v_slot[("2m", 9)].set(True)              # Pumpkin 144.490 on
 bm.v_slot[("2m", 5)].set(False)             # FT8 off
 from uranus import freqplan                 # noqa: E402
-bm.v_freq[("2m", 8)][0].set(freqplan.find("2m", "pumpkin", 144.285).label())
-bm.v_freq[("2m", 6)][0].set("144.489")
+bm.v_freq[("2m", 9)][0].set(freqplan.find("2m", "pumpkin", 144.285).label())
+bm.v_freq[("2m", 7)][0].set("144.489")
 bm.v_freq[("2m", 4)][0].set(freqplan.find("2m", "aprs", 145.825).label())
 snap(bm, "6-bands-modes.png")
 bm.save()
 cfg = g.load_cfg()
 b2 = [b for b in cfg["band"] if b["name"] == "2m"][0]["slot"]
-assert b2[8]["enabled"] is True and b2[5]["enabled"] is False
-assert abs(b2[8]["freq_mhz"] - 144.285) < 1e-6 and abs(b2[6]["freq_mhz"] - 144.489) < 1e-6, b2
+assert b2[9]["enabled"] is True and b2[5]["enabled"] is False
+assert abs(b2[9]["freq_mhz"] - 144.285) < 1e-6 and abs(b2[7]["freq_mhz"] - 144.489) < 1e-6, b2
 assert abs(b2[4]["freq_mhz"] - 145.825) < 1e-6, b2
 a.v_sub.set("AUTO")
 a.save_listen(mode_changed=True)
 assert g.load_cfg()["receive"]["mode"] == "auto"
+a.v_sub.set("FT4")
+a.save_listen(mode_changed=True)
+assert abs(g.load_cfg()["receive"]["dial_mhz"] - 144.170) < 1e-6
 a.v_sub.set("FT8")
 a.save_listen(mode_changed=True)
 rx = g.load_cfg()["receive"]

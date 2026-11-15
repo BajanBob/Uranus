@@ -29,7 +29,8 @@ carriers, SSB voice, PUMPKIN-15 to -300 (CUCUMBER when heard through FM) and UR-
 
 ## What AUTO does with them
 
-* **FT8**: decoded at once with WSJT-X's decoder (install WSJT-X).
+* **FT8 and FT4**: decoded at once with WSJT-X's decoder (install WSJT-X); each 15-second block holds
+  two FT4 slots and both are decoded.
 * **APRS and HF packet**: decoded at once with Uranus's own packet decoder.
 * **WSPR, Pumpkin, UR**: these need a whole slot. When one appears twice in a row, AUTO
   follows it for one full slot with the right decoder, then goes back to watching.

@@ -39,7 +39,8 @@ _HF_DIGITAL = {      # narrow-band digital segments where WSPR, FT8 and HF packe
     "30m": [(10.130, 10.150, "narrow-band digital (FT8 10.136, WSPR 10.1387, HF APRS 10.1476)")],
     "20m": [(14.070, 14.112, "narrow-band digital (FT8 14.074, WSPR 14.0956, HF packet 14.103)")],
     "17m": [(18.095, 18.109, "narrow-band digital (FT8 18.100, WSPR 18.1046)")],
-    "15m": [(21.070, 21.110, "narrow-band digital (FT8 21.074, WSPR 21.0946)")],
+    "15m": [(21.070, 21.110, "narrow-band digital (FT8 21.074, WSPR 21.0946)"),
+            (21.130, 21.150, "narrow-band digital (FT4 21.140)")],
     "12m": [(24.915, 24.929, "narrow-band digital (FT8 24.915, WSPR 24.9246)")],
     "10m": [(28.070, 28.190, "narrow-band digital (FT8 28.074, WSPR 28.1246)")],
     "6m": [(50.280, 50.330, "weak-signal digital (WSPR 50.293, FT8 50.313)")],
@@ -93,6 +94,9 @@ PLAN = [
         ("160m", 1.840), ("80m", 3.573), ("60m", 5.357), ("40m", 7.074), ("30m", 10.136), ("20m", 14.074),
         ("17m", 18.100), ("15m", 21.074), ("12m", 24.915), ("10m", 28.074), ("6m", 50.313))],
     Freq("6m", "ft8", 50.323, "All", "common", "FT8, alternative 6 m frequency"),
+    *[Freq(band, "ft4", mhz, "All", "standard", "FT4 (WSJT-X default)") for band, mhz in (
+        ("80m", 3.575), ("40m", 7.0475), ("30m", 10.140), ("20m", 14.080), ("17m", 18.104), ("15m", 21.140),
+        ("12m", 24.919), ("10m", 28.180), ("6m", 50.318), ("2m", 144.170))],
     *[Freq(band, "wspr", mhz, "All", "standard", "WSPR dial (tones 1.4-1.6 kHz above)") for band, mhz in (
         ("160m", 1.8366), ("80m", 3.5686), ("60m", 5.3647), ("40m", 7.0386), ("30m", 10.1387),
         ("20m", 14.0956), ("17m", 18.1046), ("15m", 21.0946), ("12m", 24.9246), ("10m", 28.1246),
@@ -145,7 +149,7 @@ PLAN = [
 
 # Occupied bandwidth used for the edge check (kHz): SSB modes stay within 3 kHz of the dial,
 # FM modes occupy a 12.5 kHz channel centred on the frequency.
-_BW_KHZ = {"aprs": 12.5, "cucumber": 12.5, "ft8": 3.0, "wspr": 3.0, "pumpkin": 3.0, "ur": 3.0}
+_BW_KHZ = {"ft4": 3.0, "aprs": 12.5, "cucumber": 12.5, "ft8": 3.0, "wspr": 3.0, "pumpkin": 3.0, "ur": 3.0}
 FM_MODES = ("aprs", "cucumber")
 
 

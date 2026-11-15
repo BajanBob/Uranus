@@ -99,17 +99,36 @@ def upgrade_config():
             mine = fh.read()
         with open(bundled(os.path.join("config", "uranus.toml")), encoding="utf-8") as fh:
             default = fh.read()
-        have = {b["name"] for b in tomllib.loads(mine).get("band", [])}
-        new = {k: v for k, v in _band_blocks(default).items() if k not in have}
-        if not new:
+        cfg_mine = tomllib.loads(mine)
+        have = {b["name"] for b in cfg_mine.get("band", [])}
+        dblocks = _band_blocks(default)
+        new = {k: v for k, v in dblocks.items() if k not in have}
+        text = mine
+        # new modes inside bands the user already has (e.g. FT4): add their slots, switched off
+        mine_blocks = _band_blocks(mine)
+        for b in cfg_mine.get("band", []):
+            if b["name"] not in dblocks or b["name"] not in mine_blocks:
+                continue
+            modes = {sl.get("mode") for sl in b.get("slot", [])}
+            extra = ""
+            for part in dblocks[b["name"]].split("[[band.slot]]")[1:]:
+                m = re.search(r'mode\s*=\s*"([^"]+)"', part)
+                if m and m.group(1) not in modes:
+                    part = re.sub(r"(?m)^\s*enabled\s*=.*$", "", part).rstrip() + "\n  enabled = false\n"
+                    extra += "\n  [[band.slot]]" + part
+                    UPGRADED_BANDS.append(f"{m.group(1).upper()} on {b['name']}")
+            if extra:
+                text = text.replace(mine_blocks[b["name"]], mine_blocks[b["name"]].rstrip("\n") + "\n" + extra, 1)
+        if new:
+            text = text.rstrip("\n") + "\n\n# ---- bands added by Uranus " + __version__ + " (switched off)\n"
+            for name, block in new.items():
+                text += "\n" + block.replace("active = true", "active = false", 1)
+            UPGRADED_BANDS.extend(new)
+        if text == mine:
             return
-        text = mine.rstrip("\n") + "\n\n# ---- bands added by Uranus " + __version__ + " (switched off)\n"
-        for name, block in new.items():
-            text += "\n" + block.replace("active = true", "active = false", 1)
         tomllib.loads(text)
         with open(CONFIG, "w", encoding="utf-8") as fh:
             fh.write(text)
-        UPGRADED_BANDS.extend(new)
     except Exception:                            # noqa: BLE001 - never block start-up
         pass
 
@@ -341,7 +360,7 @@ class App(tk.Tk):
 
         self.print(f"Uranus {__version__}\nFolder: {BASE}\nSettings: {CONFIG}\n"
                    + (f"Your settings were brought over from {MIGRATED_FROM}\n" if MIGRATED_FROM else "")
-                   + (f"New bands added to your settings (switched off): {', '.join(UPGRADED_BANDS)}\n"
+                   + (f"Added to your settings (switched off): {', '.join(UPGRADED_BANDS)}\n"
                       if UPGRADED_BANDS else "")
                    + "Hover over any control for help.\n\n")
         self.refresh_station()
@@ -526,7 +545,7 @@ class App(tk.Tk):
         sel.pack(fill="x")
         ttk.Label(sel, text="Decode", style="CardMuted.TLabel").pack(side="left")
         from . import cucumber, pumpkin, urmode
-        subs = ["AUTO", "FT8", "WSPR", "APRS"] + list(pumpkin.SUBMODES) + list(cucumber.SUBMODES) + list(urmode.SUBMODES)
+        subs = ["AUTO", "FT8", "FT4", "WSPR", "APRS"] + list(pumpkin.SUBMODES) + list(cucumber.SUBMODES) + list(urmode.SUBMODES)
         self.v_sub = tk.StringVar(value="PUMPKIN-60")
         cb = ttk.Combobox(sel, textvariable=self.v_sub, values=subs, state="readonly", width=13)
         cb.pack(side="left", padx=6)
@@ -534,7 +553,7 @@ class App(tk.Tk):
         Tooltip(cb, "What Listen + decode looks for.\nAUTO: identify every signal in the passband by its signature "
                     "(FT8, FT4, WSPR, JT65, APRS, HF packet, RTTY, PSK31, CW, carriers, voice, Pumpkin, UR) and "
                     "send each to the right decoder by itself."
-                    "\nFT8 and WSPR: decoded with WSJT-X's own decoders (install WSJT-X)."
+                    "\nFT8, FT4 and WSPR: decoded with WSJT-X's own decoders (install WSJT-X)."
                     "\nAPRS: built-in 1200-baud packet decoder, listens all the time (FM-D, squelch open)."
                     "\nPUMPKIN: SSB rig (USB-D), most sensitive, needs a GPS-locked "
                     "radio at both ends.\nCUCUMBER: any FM radio (FM-D, squelch open), no GPS needed.\nUR: SSB, "
@@ -586,7 +605,7 @@ class App(tk.Tk):
         if hasattr(self, "dial_cb"):
             self.dial_cb.config(values=self._dial_options(sub))
         if mode_changed and mode != "auto":
-            self.v_dial.set({"pumpkin": "144.490", "ur": "144.490", "ft8": "144.174", "wspr": "144.489",
+            self.v_dial.set({"pumpkin": "144.490", "ur": "144.490", "ft8": "144.174", "ft4": "144.170", "wspr": "144.489",
                              "aprs": "144.390"}.get(mode, self._cucumber_freq()))
         try:
             dial = float(self.v_dial.get().split()[0])
@@ -692,7 +711,7 @@ class App(tk.Tk):
             self.dec_head.config(text=f"Decoding · {where}", fg=C["amber"])
             self.dec_line.config(text="Identifying signals by their signatures, then decoding..." if sub == "AUTO"
                                  else f"Searching the recording for {sub} signals"
-                                 + (" with WSJT-X's decoder..." if sub in ("FT8", "WSPR") else "..."))
+                                 + (" with WSJT-X's decoder..." if sub in ("FT8", "FT4", "WSPR") else "..."))
             self.dec_bar.itemconfig(self.dec_fill, fill=C["amber"])
             self.dec_bar.coords(self.dec_fill, 0, 0, w, 10)
         elif t == "result":
@@ -1036,7 +1055,7 @@ class App(tk.Tk):
         self.update_psk()
         if hasattr(self, "v_sub"):
             sub = rx.get("submode", "PUMPKIN-60")
-            if rx.get("mode") in ("ft8", "wspr", "aprs", "auto"):
+            if rx.get("mode") in ("ft8", "ft4", "wspr", "aprs", "auto"):
                 sub = rx["mode"].upper()
             if sub.startswith("URC-"):
                 sub = "PUMPKIN-" + sub.split("-")[1]
@@ -1652,14 +1671,15 @@ def test_radio_async(widget, cfg, done):
     threading.Thread(target=go, daemon=True).start()
 
 
-MODE_OF = {"PUMPKIN": "pumpkin", "CUCUMBER": "cucumber", "UR": "ur", "FT8": "ft8", "WSPR": "wspr", "APRS": "aprs",
-           "AUTO": "auto"}
+MODE_OF = {"PUMPKIN": "pumpkin", "CUCUMBER": "cucumber", "UR": "ur", "FT8": "ft8", "FT4": "ft4", "WSPR": "wspr",
+           "APRS": "aprs", "AUTO": "auto"}
 
 MODE_HELP = {
     "aprs": "APRS position beacon. VHF/UHF: FM, 1200 baud, heard by digipeaters and i-gates (aprs.fi). "
             "HF: USB, 300 baud with 1600/1800 Hz tones, no digipeater path.",
     "ft8": "FT8, USB. 15-second slots, decoded by WSJT-X stations worldwide. Needs WSJT-X installed.",
     "wspr": "WSPR, USB. 2-minute beacon, reported on wsprnet.org. Needs WSJT-X installed.",
+    "ft4": "FT4, USB. 7.5-second slots, the fast contest mode of WSJT-X. Needs WSJT-X installed.",
     "pumpkin": "Pumpkin, USB. Uranus coherent weak-signal mode, down to about -31 dB. Needs a GPS-locked "
                "radio at both ends for full sensitivity.",
     "cucumber": "Cucumber, FM. Pumpkin through an FM radio; decodes far below where voice stops. Agree a "

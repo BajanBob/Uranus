@@ -22,6 +22,7 @@ Every entry is checked automatically to be inside the ITU Region 2 allocation an
 | APRS | 145.570 | R2 | standard | APRS: Brazil | FM simplex and digital (local option; APRS 145.570, Brazil) |
 | APRS | 145.825 | All | standard | APRS via the ISS and satellites (path ARISS), worldwide | amateur satellites (ISS and satellite APRS 145.825) |
 | FT8 | 144.174 | All | standard | FT8 calling (WSJT-X default) | weak-signal SSB/CW and digital (FT8 144.174) |
+| FT4 | 144.170 | All | standard | FT4 (WSJT-X default) | weak-signal SSB/CW and digital (FT8 144.174) |
 | WSPR | 144.489 | All | standard | WSPR, tones 144.4904-144.4906 | ARRL 'new OSCAR' segment, used for WSPR 144.489 |
 | PUMPKIN | 144.171 | All | proposed | weak-signal digital, just below FT8 | weak-signal SSB/CW and digital (FT8 144.174) |
 | PUMPKIN | 144.285 | R2 | proposed | Region 2 beacon segment 144.275-144.300 | propagation beacons (IARU Region 2) |
@@ -72,6 +73,7 @@ Every entry is checked automatically to be inside the ITU Region 2 allocation an
 | Mode | Dial MHz | Region | Status | Notes | Band-plan segment |
 |---|---|---|---|---|---|
 | FT8 | 3.573 | All | standard | FT8 (WSJT-X default) | narrow-band digital (WSPR 3.5686, FT8 3.573) |
+| FT4 | 3.575 | All | standard | FT4 (WSJT-X default) | narrow-band digital (WSPR 3.5686, FT8 3.573) |
 | WSPR | 3.5686 | All | standard | WSPR dial (tones 1.4-1.6 kHz above) | narrow-band digital (WSPR 3.5686, FT8 3.573) |
 
 ## 60 m (5.3515-5.3665 MHz)
@@ -86,6 +88,7 @@ Every entry is checked automatically to be inside the ITU Region 2 allocation an
 | Mode | Dial MHz | Region | Status | Notes | Band-plan segment |
 |---|---|---|---|---|---|
 | FT8 | 7.074 | All | standard | FT8 (WSJT-X default) | narrow-band digital (WSPR 7.0386, FT8 7.074) |
+| FT4 | 7.0475 | All | standard | FT4 (WSJT-X default) | narrow-band digital (WSPR 7.0386, FT8 7.074) |
 | WSPR | 7.0386 | All | standard | WSPR dial (tones 1.4-1.6 kHz above) | narrow-band digital (WSPR 7.0386, FT8 7.074) |
 
 ## 30 m (10.1-10.15 MHz)
@@ -94,6 +97,7 @@ Every entry is checked automatically to be inside the ITU Region 2 allocation an
 |---|---|---|---|---|---|
 | APRS | 10.1476 | All | standard | HF APRS, 300 baud, USB dial with 1600/1800 Hz tones | narrow-band digital (FT8 10.136, WSPR 10.1387, HF APRS 10.1476) |
 | FT8 | 10.136 | All | standard | FT8 (WSJT-X default) | narrow-band digital (FT8 10.136, WSPR 10.1387, HF APRS 10.1476) |
+| FT4 | 10.140 | All | standard | FT4 (WSJT-X default) | narrow-band digital (FT8 10.136, WSPR 10.1387, HF APRS 10.1476) |
 | WSPR | 10.1387 | All | standard | WSPR dial (tones 1.4-1.6 kHz above) | narrow-band digital (FT8 10.136, WSPR 10.1387, HF APRS 10.1476) |
 
 ## 20 m (14-14.35 MHz)
@@ -102,6 +106,7 @@ Every entry is checked automatically to be inside the ITU Region 2 allocation an
 |---|---|---|---|---|---|
 | APRS | 14.1016 | All | common | HF packet NET105 (centre 14.1033; '14.105 LSB'), 300 baud | narrow-band digital (FT8 14.074, WSPR 14.0956, HF packet 14.103) |
 | FT8 | 14.074 | All | standard | FT8 (WSJT-X default) | narrow-band digital (FT8 14.074, WSPR 14.0956, HF packet 14.103) |
+| FT4 | 14.080 | All | standard | FT4 (WSJT-X default) | narrow-band digital (FT8 14.074, WSPR 14.0956, HF packet 14.103) |
 | WSPR | 14.0956 | All | standard | WSPR dial (tones 1.4-1.6 kHz above) | narrow-band digital (FT8 14.074, WSPR 14.0956, HF packet 14.103) |
 
 ## 17 m (18.068-18.168 MHz)
@@ -109,6 +114,7 @@ Every entry is checked automatically to be inside the ITU Region 2 allocation an
 | Mode | Dial MHz | Region | Status | Notes | Band-plan segment |
 |---|---|---|---|---|---|
 | FT8 | 18.100 | All | standard | FT8 (WSJT-X default) | narrow-band digital (FT8 18.100, WSPR 18.1046) |
+| FT4 | 18.104 | All | standard | FT4 (WSJT-X default) | narrow-band digital (FT8 18.100, WSPR 18.1046) |
 | WSPR | 18.1046 | All | standard | WSPR dial (tones 1.4-1.6 kHz above) | narrow-band digital (FT8 18.100, WSPR 18.1046) |
 
 ## 15 m (21-21.45 MHz)
@@ -116,6 +122,7 @@ Every entry is checked automatically to be inside the ITU Region 2 allocation an
 | Mode | Dial MHz | Region | Status | Notes | Band-plan segment |
 |---|---|---|---|---|---|
 | FT8 | 21.074 | All | standard | FT8 (WSJT-X default) | narrow-band digital (FT8 21.074, WSPR 21.0946) |
+| FT4 | 21.140 | All | standard | FT4 (WSJT-X default) | narrow-band digital (FT4 21.140) |
 | WSPR | 21.0946 | All | standard | WSPR dial (tones 1.4-1.6 kHz above) | narrow-band digital (FT8 21.074, WSPR 21.0946) |
 
 ## 12 m (24.89-24.99 MHz)
@@ -123,6 +130,7 @@ Every entry is checked automatically to be inside the ITU Region 2 allocation an
 | Mode | Dial MHz | Region | Status | Notes | Band-plan segment |
 |---|---|---|---|---|---|
 | FT8 | 24.915 | All | standard | FT8 (WSJT-X default) | narrow-band digital (FT8 24.915, WSPR 24.9246) |
+| FT4 | 24.919 | All | standard | FT4 (WSJT-X default) | narrow-band digital (FT8 24.915, WSPR 24.9246) |
 | WSPR | 24.9246 | All | standard | WSPR dial (tones 1.4-1.6 kHz above) | narrow-band digital (FT8 24.915, WSPR 24.9246) |
 
 ## 10 m (28-29.7 MHz)
@@ -130,6 +138,7 @@ Every entry is checked automatically to be inside the ITU Region 2 allocation an
 | Mode | Dial MHz | Region | Status | Notes | Band-plan segment |
 |---|---|---|---|---|---|
 | FT8 | 28.074 | All | standard | FT8 (WSJT-X default) | narrow-band digital (FT8 28.074, WSPR 28.1246) |
+| FT4 | 28.180 | All | standard | FT4 (WSJT-X default) | narrow-band digital (FT8 28.074, WSPR 28.1246) |
 | WSPR | 28.1246 | All | standard | WSPR dial (tones 1.4-1.6 kHz above) | narrow-band digital (FT8 28.074, WSPR 28.1246) |
 
 ## 6 m (50-54 MHz)
@@ -138,6 +147,7 @@ Every entry is checked automatically to be inside the ITU Region 2 allocation an
 |---|---|---|---|---|---|
 | FT8 | 50.313 | All | standard | FT8 (WSJT-X default) | weak-signal digital (WSPR 50.293, FT8 50.313) |
 | FT8 | 50.323 | All | common | FT8, alternative 6 m frequency | weak-signal digital (WSPR 50.293, FT8 50.313) |
+| FT4 | 50.318 | All | standard | FT4 (WSJT-X default) | weak-signal digital (WSPR 50.293, FT8 50.313) |
 | WSPR | 50.293 | All | standard | WSPR dial (tones 1.4-1.6 kHz above) | weak-signal digital (WSPR 50.293, FT8 50.313) |
 
 ## Why Pumpkin and Cucumber sit where they do
