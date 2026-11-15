@@ -4,9 +4,10 @@ and by which propagation mode.
 Writes one self-contained HTML page. Online it draws on OpenStreetMap
 (Leaflet); offline it falls back to a built-in Maidenhead-grid map.
 
-Marker fill and line colour = band (2 m teal, 1.25 m rose, 70 cm violet).
-Marker ring = status: blue = online (heard within `online_min` minutes),
-red = offline. Offline stations are drawn faded.
+Markers are pumpkins. Pumpkin colour and line colour = band (2 m teal,
+1.25 m rose, 70 cm violet); your own station is a large orange pumpkin.
+Ring round the pumpkin = status: blue = online (heard within `online_min`
+minutes), red = offline. Offline stations are drawn faded.
 Lines: solid = we decoded them, dashed = they decoded us (PSK Reporter),
 thick = both directions.
 """
@@ -157,6 +158,9 @@ header h1 { margin: 0; font-size: 1.1rem; letter-spacing: .06em; text-transform:
 #fallback text { font-family: var(--mono); }
 .lbl { font: 600 11px/1.25 var(--mono); background: rgba(255,255,255,.88); border: 0; box-shadow: none; padding: 2px 5px; color: #17212b; }
 .lbl::before { display: none; }
+.pk { background: none; border: 0; }
+.pk svg { filter: drop-shadow(0 1px 1.5px rgba(0,0,0,.45)); display: block; }
+.pkl { display: inline-block; width: 16px; height: 16px; vertical-align: -3px; margin-right: 4px; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 10px 16px; border-bottom: 1px solid var(--rule); font: .78rem var(--mono); color: var(--muted); }
 .legend svg { vertical-align: middle; margin-right: 4px; }
 .bands { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 0; border-bottom: 1px solid var(--rule); }
@@ -198,6 +202,7 @@ footer { padding: 8px 16px 18px; font: .72rem var(--mono); color: var(--muted); 
   <span><span class="sw" style="background:var(--b2m)"></span>2 m station</span>
   <span><span class="sw" style="background:var(--b125)"></span>1.25 m station</span>
   <span><span class="sw" style="background:var(--b70)"></span>70 cm station</span>
+  <span><span class="pkl" data-c="home"></span>your station</span>
   <span><span class="ring" style="border-color:var(--online)"></span>online (ring)</span>
   <span><span class="ring" style="border-color:var(--offline)"></span>offline (ring, faded)</span>
   <span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="currentColor" stroke-width="2"/></svg>we heard them</span>
@@ -219,6 +224,13 @@ footer { padding: 8px 16px 18px; font: .72rem var(--mono); color: var(--muted); 
 (function () {
   var D = JSON.parse(document.getElementById("data").textContent);
   var S = D.stations, H = D.home, M = D.modes;
+  setTimeout(function () {
+    document.querySelectorAll(".legend .sw, header .sw").forEach(function (e) {
+      var c = getComputedStyle(e).backgroundColor; e.className = "pkl"; e.style.background = "none";
+      e.innerHTML = pumpkinSvg(c, null, 16, false);
+    });
+    document.querySelectorAll(".pkl[data-c=home]").forEach(function (e) { e.innerHTML = pumpkinSvg("#f07c12", null, 16, false); });
+  }, 0);
   var css = getComputedStyle(document.documentElement);
   function col(n) { return css.getPropertyValue(n).trim(); }
   function bandCol(b) { return b === "70cm" ? col("--b70") : b === "1.25m" ? col("--b125") : col("--b2m"); }
@@ -227,6 +239,20 @@ footer { padding: 8px 16px 18px; font: .72rem var(--mono); color: var(--muted); 
   function fmtSnr(v) { return (v === null || v === undefined || v !== v || v <= -99) ? "-" : (v > 0 ? "+" : "") + Math.round(v); }
   function ago(m) { return m < 1 ? "now" : m < 60 ? m + " min" : Math.round(m / 60) + " h"; }
   function dirTxt(d) { return d.length > 1 ? "both ways" : d[0] === "rx" ? "we heard" : "heard us"; }
+  function pumpkinSvg(fill, ring, size, faded) {
+    var o = faded ? .5 : 1;
+    return '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 32 32">' +
+      (ring ? '<circle cx="16" cy="18" r="14" fill="none" stroke="' + ring + '" stroke-width="3" opacity="' + (faded ? .7 : 1) + '"/>' : '') +
+      '<g opacity="' + o + '" stroke="rgba(0,0,0,.35)" stroke-width=".8">' +
+      '<ellipse cx="11" cy="19" rx="6" ry="8" fill="' + fill + '"/><ellipse cx="21" cy="19" rx="6" ry="8" fill="' + fill + '"/>' +
+      '<ellipse cx="16" cy="19" rx="6.5" ry="8.6" fill="' + fill + '"/></g>' +
+      '<path d="M16 11 C15.5 8 16.5 6 18.5 5" stroke="#3f7d2b" stroke-width="2.4" fill="none" stroke-linecap="round" opacity="' + o + '"/>' +
+      '<path d="M17.5 7.5 C20 6 22.5 6.5 23.5 8 C21 9 19 8.8 17.5 7.5Z" fill="#5fae3a" opacity="' + o + '"/></svg>';
+  }
+  function pumpkinIcon(fill, ring, size, faded) {
+    return L.divIcon({ className: "pk", html: pumpkinSvg(fill, ring, size, faded), iconSize: [size, size],
+      iconAnchor: [size / 2, size * 18 / 32], popupAnchor: [0, -size / 2], tooltipAnchor: [size / 2 - 2, 0] });
+  }
   function overlaps(a, b) { return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom); }
   function declutter(items, force) {
     // items: [{el, prio}] - keep higher-priority labels, hide any that collide with a kept one
@@ -301,10 +327,10 @@ footer { padding: 8px 16px 18px; font: .72rem var(--mono); color: var(--muted); 
       L.polyline([[H.lat, H.lon], [s.lat, s.lon]], { color: bandCol(s.band), weight: s.dirs.length > 1 ? 4 : 2, opacity: s.online ? .85 : .35,
         dashArray: s.dirs.length === 1 && s.dirs[0] === "heard" ? "6 5" : null }).addTo(map);
     });
-    L.circleMarker([H.lat, H.lon], { radius: 9, color: "#fff", weight: 2, fillColor: col("--home"), fillOpacity: 1 })
+    L.marker([H.lat, H.lon], { icon: pumpkinIcon("#f07c12", null, 40, false), zIndexOffset: 1000 })
       .addTo(map).bindTooltip(esc(H.call) + " (home)", { permanent: true, direction: "right", className: "lbl" });
     S.forEach(function (s, i) {
-      var m = L.circleMarker([s.lat, s.lon], { radius: 7, color: stCol(s), weight: 3, fillColor: bandCol(s.band), fillOpacity: s.online ? 1 : .45, opacity: s.online ? 1 : .7 })
+      var m = L.marker([s.lat, s.lon], { icon: pumpkinIcon(bandCol(s.band), stCol(s), 30, !s.online) })
         .addTo(map).bindPopup(popup(s)).bindTooltip(label(s), { permanent: true, direction: i % 2 ? "left" : "right", className: "lbl" });
       markers.push(m); pts.push([s.lat, s.lon]);
     });
@@ -356,9 +382,10 @@ footer { padding: 8px 16px 18px; font: .72rem var(--mono); color: var(--muted); 
     var labels = [];
     S.forEach(function (s, i) {
       var q = P(s.lat, s.lon);
-      var g = el("circle", { cx: q[0], cy: q[1], r: 7, fill: bandCol(s.band), "fill-opacity": s.online ? 1 : .45, stroke: stCol(s), "stroke-width": 3 });
+      var g = el("g", { transform: "translate(" + (q[0] - 15) + "," + (q[1] - 17) + ") scale(0.9375)" });
+      g.innerHTML = pumpkinSvg(bandCol(s.band), stCol(s), 32, !s.online).replace(/^<svg[^>]*>|<\/svg>$/g, "");
       var t = document.createElementNS(NS, "title"); t.textContent = popup(s).replace(/<br>/g, "\n").replace(/<[^>]+>/g, ""); g.appendChild(t);
-      var left = q[0] > W - 200, dx = left ? -12 : 12, anchor = left ? "end" : "start";
+      var left = q[0] > W - 200, dx = left ? -17 : 17, anchor = left ? "end" : "start";
       var lg = document.createElementNS(NS, "g"); svg.appendChild(lg);
       var t1 = document.createElementNS(NS, "text"), t2 = document.createElementNS(NS, "text");
       [[t1, { x: q[0] + dx, y: q[1] - 3, "font-size": 12, "font-weight": 700, fill: col("--ink"), "text-anchor": anchor, opacity: s.online ? 1 : .7 }, s.call + " · " + bandTxt(s.band)],
@@ -366,9 +393,10 @@ footer { padding: 8px 16px 18px; font: .72rem var(--mono); color: var(--muted); 
         .forEach(function (d) { for (var k2 in d[1]) d[0].setAttribute(k2, d[1][k2]); d[0].textContent = d[2]; lg.appendChild(d[0]); });
       labels.push({ el: lg, prio: prio(s), idx: i });
     });
-    el("circle", { cx: h[0], cy: h[1], r: 9, fill: col("--home"), stroke: col("--panel"), "stroke-width": 2 });
-    el("text", { x: h[0] + 13, y: h[1] + 4, "font-size": 13, "font-weight": 700, fill: col("--ink") }, H.call + " (home)");
-    var hl = el("text", { x: h[0] + 13, y: h[1] + 4, "font-size": 13, "font-weight": 700, fill: "transparent" }, H.call + " (home)");
+    var hg = el("g", { transform: "translate(" + (h[0] - 20) + "," + (h[1] - 22) + ") scale(1.25)" });
+    hg.innerHTML = pumpkinSvg("#f07c12", null, 32, false).replace(/^<svg[^>]*>|<\/svg>$/g, "");
+    el("text", { x: h[0] + 22, y: h[1] + 4, "font-size": 13, "font-weight": 700, fill: col("--ink") }, H.call + " (home)");
+    var hl = el("text", { x: h[0] + 22, y: h[1] + 4, "font-size": 13, "font-weight": 700, fill: "transparent" }, H.call + " (home)");
     labels.push({ el: hl, prio: 1e9, idx: -2 });
     declutter(labels, forced);
     hl.style.visibility = "hidden";

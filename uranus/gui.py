@@ -122,6 +122,9 @@ def apply_theme(root):
     st.map("TCheckbutton", background=[("active", C["bg"])], indicatorcolor=[("selected", C["orange"])])
     st.configure("Card.TCheckbutton", background=C["panel"], foreground=C["ink"], font=(UI, 10, "bold"))
     st.map("Card.TCheckbutton", background=[("active", C["panel"])], indicatorcolor=[("selected", C["green"])])
+    st.configure("Slot.TCheckbutton", background=C["panel"], foreground=C["ink"], font=(MONO, 10))
+    st.map("Slot.TCheckbutton", background=[("active", C["panel"])], indicatorcolor=[("selected", C["orange"])],
+           foreground=[("disabled", C["muted"])])
     st.configure("TCombobox", fieldbackground=C["panel2"], background=C["panel2"], foreground=C["ink"],
                  arrowcolor=C["orange"], padding=4)
     st.map("TCombobox", fieldbackground=[("readonly", C["panel2"])], foreground=[("readonly", C["ink"])],
@@ -197,8 +200,8 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(f"Uranus {__version__}")
-        self.geometry("1120x740")
-        self.minsize(940, 620)
+        self.geometry("1220x860")
+        self.minsize(1040, 720)
         apply_theme(self)
         self.q = queue.Queue()
         self.runner = None
@@ -206,6 +209,14 @@ class App(tk.Tk):
         self.reporter = None
         self.state = "idle"
         self._tick = 0
+        self.evq = queue.Queue()             # listen-mode events from the decoder thread
+        self.dec = {"type": "idle"}          # latest decoder state for the status panel
+        self.ticker_items = []               # "heard" messages scrolling along the bottom
+        self.heard_seen = set()
+        self.next_heard_poll = time.time() + 120
+        self.wf_rows = []                    # waterfall rows from the audio thread
+        self.wf_img = None
+        self.wf_mon = None
         os.chdir(BASE)
         ensure_config()
 
@@ -216,6 +227,7 @@ class App(tk.Tk):
 
         self._header()
         self._state_strip()
+        self._ticker()
         body = ttk.Frame(self)
         body.pack(fill="both", expand=True, padx=18, pady=(4, 16))
         self._sidebar(body)
@@ -225,6 +237,7 @@ class App(tk.Tk):
         cards.pack(fill="x")
         self._station_card(cards)
         self._psk_card(cards)
+        self._receiver(right)
         self._console(right)
 
         self.print(f"Uranus {__version__}\nFolder: {BASE}\nSettings: {CONFIG}\n"
@@ -233,6 +246,9 @@ class App(tk.Tk):
         self.set_state("idle", "Ready. New here? Press 'Setup wizard'.")
         self.after(100, self.poll)
         self.after(600, self._first_run)
+        self.after(900, self.start_waterfall)
+        self.after(150, self.render_waterfall)
+        self.after(40, self.scroll_ticker)
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
     # ---------------------------------------------------------- layout pieces
@@ -271,13 +287,15 @@ class App(tk.Tk):
         Tooltip(self.lamp, "Grey: standby · Amber: working or dry run · Red: ON AIR · Blue: listening")
 
     def _sidebar(self, parent):
-        side = ttk.Frame(parent, width=250)
+        side = ttk.Frame(parent, width=240)
         side.pack(side="left", fill="y")
         groups = [
             ("GET STARTED", [
                 ("Setup wizard", self.wizard, "Accent", "Step-by-step: callsign and grid, radio (including the "
                  "Icom IC-9100), USB audio codec, CAT port, bands and PSK Reporter."),
                 ("Station setup", self.setup, None, "All radio, audio, CAT and band settings on one page."),
+                ("Bands and modes", self.bands_modes, None, "Switch whole bands, and each mode and frequency "
+                 "(APRS, FT8, WSPR, Pumpkin, Cucumber, UR), on or off for the beacon."),
                 ("Test radio", self.test_radio, "Go", "Connect to the radio and read its frequency. Uranus "
                  "starts its built-in Hamlib by itself: no install and no model number needed."),
                 ("Edit settings file", self.edit_config, None, "Open uranus.toml in a text editor for "
@@ -295,22 +313,12 @@ class App(tk.Tk):
                  "characters per transmission."),
                 ("Stop", self.stop, None, "Stop after the current transmission or listening slot."),
             ]),
-            ("MAP", [
+            ("MAP AND TOOLS", [
                 ("Station map", lambda: self.cli(["map", "--psk", "--open"]), None,
-                 "Map of stations you heard and stations that heard you (from PSK Reporter), by band."),
-                ("Map demo", lambda: self.cli(["map", "--demo", "--open"]), None,
-                 "The station map with clearly labelled sample stations."),
-                ("Open output folder", self.open_out, None, "WAV files, spots log and the map."),
-            ]),
-            ("TRY IT WITHOUT A RADIO", [
-                ("Pumpkin demo  −29 dB", lambda: self.cli(["pumpkin-loopback", "--submode", "PUMPKIN-60",
-                                                          "--snr", "-29"]), None,
-                 "Encode a PUMPKIN-60 frame, bury it 29 dB under the noise and decode it."),
-                ("Cucumber demo  FM", lambda: self.cli(["cucumber-loopback", "--submode", "CUCUMBER-15",
-                                                       "--cnr", "-8"]), None,
-                 "Send a CUCUMBER-15 frame through a simulated FM link 8 dB below the noise and decode it."),
-                ("Link budget", lambda: self.cli(["link-budget", "--example"]), None,
-                 "Signal margin for every mode on a reference 400 km beyond-horizon 2 m path."),
+                 "Map of stations you heard and stations that heard you (from PSK Reporter). Every station is a "
+                 "pumpkin, coloured by band, ringed blue when online and red when not."),
+                ("Demos and tools...", self.demos_menu, None, "Try Uranus without a radio: Pumpkin and Cucumber "
+                 "decoding demos, the map demo, link budget and the output folder."),
             ]),
         ]
         for title, items in groups:
@@ -378,6 +386,345 @@ class App(tk.Tk):
         b.pack(anchor="w", pady=(8, 0))
         Tooltip(b, "Open pskreporter.info in your browser, showing who has heard your callsign.")
 
+    # ---------------------------------------------------------- receiver: waterfall + decoder
+    def _receiver(self, parent):
+        f = ttk.Frame(parent, style="Card.TFrame", padding=(16, 10))
+        f.pack(fill="x", pady=(12, 0))
+        top = ttk.Frame(f, style="Card.TFrame")
+        top.pack(fill="x")
+        ttk.Label(top, text="RECEIVER · LIVE AUDIO SPECTRUM", style="CardHead.TLabel").pack(side="left")
+        self.wf_info = tk.Label(top, text="", bg=C["panel"], fg=C["muted"], font=(MONO, 9))
+        self.wf_info.pack(side="right")
+        row = ttk.Frame(f, style="Card.TFrame")
+        row.pack(fill="x", pady=(6, 0))
+        # waterfall
+        wfbox = ttk.Frame(row, style="Card.TFrame")
+        wfbox.pack(side="left")
+        self.WF_W, self.WF_H = 512, 118
+        self.wf = tk.Canvas(wfbox, width=self.WF_W, height=self.WF_H + 18, bg=C["dark"], highlightthickness=0)
+        self.wf.pack()
+        self.wf_item = self.wf.create_image(0, 0, anchor="nw")
+        for hz in range(0, 3001, 500):
+            x = hz / 3000 * (self.WF_W - 1)
+            self.wf.create_line(x, self.WF_H, x, self.WF_H + 4, fill=C["muted"])
+            self.wf.create_text(min(max(x, 12), self.WF_W - 14), self.WF_H + 11, text=f"{hz}",
+                                fill=C["muted"], font=(MONO, 8))
+        xm = 1500 / 3000 * (self.WF_W - 1)
+        self.wf.create_line(xm, 0, xm, self.WF_H, fill=C["orange"], dash=(2, 4))
+        self.wf_msg = self.wf.create_text(self.WF_W / 2, self.WF_H / 2, text="Starting the waterfall...",
+                                          fill=C["muted"], font=(UI, 10))
+        Tooltip(self.wf, "Waterfall of the radio's receive audio: about 0 to 3000 Hz above the dial frequency, "
+                         "newest at the top. Signals show as bright traces; Pumpkin and FT8 sit near the dashed "
+                         "1500 Hz line. It shows the band segment the radio is tuned to, not the whole band. "
+                         "Set the IC-9100 to USB-D (or FM-D for Cucumber) with the squelch open.")
+        # decoder status
+        dec = ttk.Frame(row, style="Card.TFrame")
+        dec.pack(side="left", fill="both", expand=True, padx=(16, 0))
+        sel = ttk.Frame(dec, style="Card.TFrame")
+        sel.pack(fill="x")
+        ttk.Label(sel, text="Decode", style="CardMuted.TLabel").pack(side="left")
+        from . import cucumber, pumpkin, urmode
+        subs = list(pumpkin.SUBMODES) + list(cucumber.SUBMODES) + list(urmode.SUBMODES)
+        self.v_sub = tk.StringVar(value="PUMPKIN-60")
+        cb = ttk.Combobox(sel, textvariable=self.v_sub, values=subs, state="readonly", width=13)
+        cb.pack(side="left", padx=6)
+        cb.bind("<<ComboboxSelected>>", lambda e: self.save_listen(mode_changed=True))
+        Tooltip(cb, "What Listen + decode looks for.\nPUMPKIN: SSB rig (USB-D), most sensitive, needs a GPS-locked "
+                    "radio at both ends.\nCUCUMBER: any FM radio (FM-D, squelch open), no GPS needed.\nUR: SSB, "
+                    "no GPS needed.\n-15 = 15-second slots, -60 = 60-second slots (about 6 dB more sensitive).")
+        ttk.Label(sel, text="MHz", style="CardMuted.TLabel").pack(side="left", padx=(6, 0))
+        self.v_dial = tk.StringVar(value="144.490")
+        de = ttk.Entry(sel, textvariable=self.v_dial, width=9)
+        de.pack(side="left", padx=6)
+        de.bind("<FocusOut>", lambda e: self.save_listen())
+        de.bind("<Return>", lambda e: self.save_listen())
+        Tooltip(de, "Dial frequency the radio is tuned to while listening. Pumpkin 2 m: 144.490; Cucumber: the "
+                    "agreed FM simplex channel. Uranus tunes the radio here when you press Listen + decode.")
+        self.dec_head = tk.Label(dec, text="", bg=C["panel"], fg=C["ink"], font=(UI, 12, "bold"), anchor="w")
+        self.dec_head.pack(fill="x", pady=(10, 2))
+        self.dec_bar = tk.Canvas(dec, height=10, bg=C["panel2"], highlightthickness=0)
+        self.dec_bar.pack(fill="x", pady=(2, 4))
+        self.dec_fill = self.dec_bar.create_rectangle(0, 0, 0, 10, fill=C["blue"], width=0)
+        Tooltip(self.dec_bar, "Progress through the current slot: blue while recording, amber while decoding.")
+        self.dec_line = tk.Label(dec, text="", bg=C["panel"], fg=C["muted"], font=(UI, 10), anchor="w",
+                                 justify="left", wraplength=420)
+        self.dec_line.pack(fill="x")
+        self.dec_last = tk.Label(dec, text="", bg=C["panel"], fg=C["muted"], font=(MONO, 10), anchor="w",
+                                 justify="left")
+        self.dec_last.pack(fill="x", pady=(4, 0))
+        opt = ttk.Frame(dec, style="Card.TFrame")
+        opt.pack(fill="x", pady=(6, 0))
+        self.v_beep = tk.BooleanVar(value=True)
+        bc = ttk.Checkbutton(opt, text="Beep and flash when a station is decoded", variable=self.v_beep,
+                             style="Card.TCheckbutton")
+        bc.pack(side="left")
+        Tooltip(bc, "Alert: a short sound and an orange flash of the status bar on every decode. Every decode "
+                    "also scrolls along the bottom of the window.")
+
+    def save_listen(self, mode_changed=False):
+        sub = self.v_sub.get()
+        mode = {"PUMPKIN": "pumpkin", "CUCUMBER": "cucumber", "UR": "ur"}[sub.split("-")[0]]
+        if mode_changed:
+            self.v_dial.set({"pumpkin": "144.490", "ur": "144.490"}.get(mode, self._cucumber_freq()))
+        try:
+            dial = float(self.v_dial.get())
+        except ValueError:
+            messagebox.showerror("Dial", "The dial frequency must be a number in MHz, e.g. 144.490.")
+            return
+        write_keys({("receive", "mode"): mode, ("receive", "submode"): sub, ("receive", "dial_mhz"): dial})
+        if self.runner is not None and hasattr(self.runner, "submode"):
+            self.print("Decoder change takes effect the next time you press Listen + decode.\n")
+        self.update_decoder()
+
+    def _cucumber_freq(self):
+        try:
+            for b in load_cfg().get("band", []):
+                for sl in b.get("slot", []):
+                    if sl.get("mode") == "cucumber":
+                        return f"{sl['freq_mhz']:.3f}"
+        except Exception:                    # noqa: BLE001
+            pass
+        return "145.580"
+
+    def on_listen_event(self, e):
+        self.evq.put(e)
+
+    def handle_events(self):
+        try:
+            while True:
+                e = self.evq.get_nowait()
+                t = e["type"]
+                if t in ("waiting", "recording", "decoding", "result"):
+                    self.dec = e
+                    if t == "result":
+                        self.dec_last.config(
+                            text=self._result_text(e), fg=C["green"] if e["count"] else C["muted"])
+                elif t == "decode":
+                    self.on_decode(e["spot"])
+                elif t == "text":
+                    self.add_ticker(f"TEXT  {e['text']}  ({e['snr']:+.0f} dB, {e['mode']})", alert=True)
+        except queue.Empty:
+            pass
+
+    @staticmethod
+    def _result_text(e):
+        hhmm = time.strftime("%H:%M:%S", time.gmtime(e["start"]))
+        lv = e.get("level_db", -120)
+        if e["count"]:
+            return f"Slot {hhmm}: {e['count']} decode(s)  ✔"
+        hint = ("  · no audio from the radio: check USB AF output level" if lv < -70 else
+                "  · audio too loud: lower USB AF output level" if lv > -3 else "")
+        return f"Slot {hhmm}: no decode · audio {lv:.0f} dBFS{hint}"
+
+    def update_decoder(self):
+        e, now = self.dec, time.time()
+        w = max(1, self.dec_bar.winfo_width())
+        sub = e.get("submode", self.v_sub.get())
+        dial = e.get("dial_hz", 0) / 1e6 if e.get("dial_hz") else None
+        where = f"{sub} on {dial:.4f} MHz" if dial else sub
+        t = e["type"]
+        if t == "idle" or self.runner is None or not hasattr(self.runner, "submode"):
+            self.dec_head.config(text="Decoder off", fg=C["muted"])
+            self.dec_line.config(text="Choose what to decode, then press Listen + decode. Each slot is recorded, "
+                                      "then decoded; results appear here and scroll along the bottom.")
+            self.dec_bar.coords(self.dec_fill, 0, 0, 0, 10)
+            return
+        if t == "waiting":
+            left = max(0, int(e["start"] - now))
+            self.dec_head.config(text=f"Waiting for the next slot · {where}", fg=C["ink"])
+            self.dec_line.config(text=f"Slot starts {time.strftime('%H:%M:%S', time.gmtime(e['start']))} UTC, "
+                                      f"in {left // 60}:{left % 60:02d}")
+            self.dec_bar.coords(self.dec_fill, 0, 0, 0, 10)
+        elif t == "recording":
+            done = min(1.0, max(0.0, (now - e["start"]) / e["rec_s"]))
+            self.dec_head.config(text=f"Listening · {where}", fg=C["blue"])
+            self.dec_line.config(text=f"Recording slot {time.strftime('%H:%M:%S', time.gmtime(e['start']))}: "
+                                      f"{int(done * e['rec_s'])} of {int(e['rec_s'])} s, then decoding")
+            self.dec_bar.itemconfig(self.dec_fill, fill=C["blue"])
+            self.dec_bar.coords(self.dec_fill, 0, 0, w * done, 10)
+        elif t == "decoding":
+            self.dec_head.config(text=f"Decoding · {where}", fg=C["amber"])
+            self.dec_line.config(text="Searching the recording for Pumpkin / Cucumber / UR frames...")
+            self.dec_bar.itemconfig(self.dec_fill, fill=C["amber"])
+            self.dec_bar.coords(self.dec_fill, 0, 0, w, 10)
+        elif t == "result":
+            self.dec_head.config(text=f"Listening · {where}", fg=C["blue"])
+            self.dec_line.config(text="Next slot starting shortly.")
+
+    # ---------------------------------------------------------- decodes: alert + ticker
+    def _home(self):
+        from . import geo
+        try:
+            st = load_cfg().get("station", {})
+            return geo.grid_to_latlon(st.get("grid6") or st.get("grid", "GK03"))
+        except Exception:                    # noqa: BLE001
+            return None
+
+    @staticmethod
+    def band_of(hz):
+        mhz = (hz or 0) / 1e6
+        return "2 m" if 144 <= mhz <= 148 else "1.25 m" if 219 <= mhz <= 225 else "70 cm" if 420 <= mhz <= 450 else \
+            f"{mhz:.3f} MHz"
+
+    def describe(self, call, grid, snr, hz, mode, prefix):
+        from . import geo
+        txt = f"{prefix} {call}  {grid}  {snr:+.0f} dB  {self.band_of(hz)} {mode}"
+        home = self._home()
+        try:
+            if home and grid:
+                there = geo.grid_to_latlon(grid)
+                txt += f"  {geo.distance_km(home, there):,.0f} km {geo.bearing_deg(home, there):.0f}°"
+        except Exception:                    # noqa: BLE001
+            pass
+        return txt + time.strftime("  %H:%MZ", time.gmtime())
+
+    def on_decode(self, sp):
+        self.add_ticker(self.describe(sp["call"], sp.get("grid", ""), sp["snr"], sp.get("freq_hz"), sp["mode"],
+                                      "HEARD"), alert=True)
+
+    def add_ticker(self, text, alert=False):
+        self.ticker_items.insert(0, text)
+        del self.ticker_items[12:]
+        self.ticker_x = None
+        self._ticker_text()
+        if alert:
+            self.print(f"*** {text}\n")
+            if self.v_beep.get():
+                self.flash()
+                try:
+                    if os.name == "nt":
+                        import winsound
+                        winsound.MessageBeep(winsound.MB_ICONASTERISK)
+                    else:
+                        self.bell()
+                except Exception:            # noqa: BLE001
+                    pass
+
+    def flash(self, n=6):
+        if n <= 0:
+            self.set_state(self.state)
+            return
+        colour = C["orange"] if n % 2 == 0 else C["panel"]
+        self.lamp.itemconfig(self.lamp_dot, fill=colour)
+        self.state_lbl.config(text="SIGNAL!" if n % 2 == 0 else STATES.get(self.state, STATES["idle"])[1],
+                              fg=C["orange"] if n % 2 == 0 else C["ink"])
+        self.after(350, lambda: self.flash(n - 1))
+
+    def _ticker(self):
+        bar = tk.Frame(self, bg=C["dark"])
+        bar.pack(side="bottom", fill="x")
+        tk.Label(bar, text=" HEARD ", bg=C["orange"], fg=C["dark"], font=(UI, 9, "bold"), padx=6).pack(side="left",
+                                                                                                       fill="y")
+        self.tk_cv = tk.Canvas(bar, height=26, bg=C["dark"], highlightthickness=0)
+        self.tk_cv.pack(side="left", fill="x", expand=True)
+        self.tk_item = self.tk_cv.create_text(10, 13, anchor="w", fill=C["ink"], font=(MONO, 10), text="")
+        self.ticker_x = None
+        Tooltip(self.tk_cv, "Stations you decoded (HEARD) and stations that reported hearing you on PSK Reporter "
+                            "(HEARD YOU), newest first, with signal report, band, mode, distance and bearing.")
+        self._ticker_text()
+
+    def _ticker_text(self):
+        txt = "     ◆     ".join(self.ticker_items) if self.ticker_items else \
+            "No signals yet. Press Listen + decode; every station heard will scroll along here."
+        self.tk_cv.itemconfig(self.tk_item, text=txt, fill=C["ink"] if self.ticker_items else C["muted"])
+
+    def scroll_ticker(self):
+        try:
+            w = self.tk_cv.winfo_width()
+            bbox = self.tk_cv.bbox(self.tk_item)
+            if self.ticker_items and bbox:
+                if self.ticker_x is None:
+                    self.ticker_x = w
+                self.ticker_x -= 2
+                if self.ticker_x + (bbox[2] - bbox[0]) < 0:
+                    self.ticker_x = w
+                self.tk_cv.coords(self.tk_item, self.ticker_x, 13)
+            else:
+                self.tk_cv.coords(self.tk_item, 10, 13)
+        except tk.TclError:
+            return
+        self.after(40, self.scroll_ticker)
+
+    def poll_heard_you(self):
+        """Every 5 minutes while running: who has reported hearing us on PSK Reporter."""
+        call = getattr(self, "cfg_call", "")
+        if not call or call == "N0CALL":
+            return
+
+        def go():
+            from . import pskreporter
+            try:
+                rep = load_cfg().get("reporting", {})
+                got = pskreporter.heard_by(call, 1800, rep.get("pskreporter_contact") or None)
+            except Exception as e:           # noqa: BLE001
+                self.q.put(f"PSK Reporter lookup failed: {e}\n")
+                return
+            for r in got:
+                key = (r["call"], r["time"], r["mode"])
+                if key not in self.heard_seen:
+                    self.heard_seen.add(key)
+                    self.evq.put({"type": "heard_you", "r": r})
+        threading.Thread(target=go, daemon=True).start()
+
+    # ---------------------------------------------------------- waterfall
+    def start_waterfall(self):
+        from . import spectrum
+        if self.wf_mon:
+            self.wf_mon.stop()
+        try:
+            dev = load_cfg().get("receive", {}).get("audio_device", "default")
+        except Exception:                    # noqa: BLE001
+            dev = "default"
+        self.wf_dev = dev
+        self.wf_mon = spectrum.Monitor(dev, self.wf_rows.append)
+        self.wf_mon.start()
+
+    def render_waterfall(self):
+        try:
+            self._render_waterfall()
+        except Exception as e:               # noqa: BLE001
+            self.wf.itemconfig(self.wf_msg, text=f"Waterfall unavailable: {e}")
+        self.after(150, self.render_waterfall)
+
+    def _render_waterfall(self):
+        import numpy as np
+        if self.wf_mon:
+            self.wf_mon.tick()
+        rows, self.wf_rows[:] = self.wf_rows[:], []
+        if not hasattr(self, "wf_buf"):
+            self.wf_buf = np.zeros((self.WF_H, self.WF_W), dtype=np.uint8)
+            stops = [(0, (11, 14, 18)), (.3, (18, 42, 110)), (.55, (40, 125, 205)), (.75, (255, 154, 74)),
+                     (.9, (255, 222, 120)), (1, (255, 255, 255))]
+            xs = np.linspace(0, 1, 256)
+            self.wf_lut = np.stack([np.interp(xs, [p for p, _ in stops], [c[k] for _, c in stops])
+                                    for k in range(3)], axis=1).astype(np.uint8)
+        if rows:
+            for r in rows[-self.WF_H:]:
+                r = np.asarray(r)
+                idx = np.linspace(0, len(r) - 1, self.WF_W).astype(int)
+                v = r[idx]
+                floor = np.median(v)
+                line = np.clip((v - floor + 3) / 30 * 255, 0, 255).astype(np.uint8)
+                self.wf_buf = np.roll(self.wf_buf, 1, axis=0)
+                self.wf_buf[0] = line
+                self.wf_peak = (idx[int(np.argmax(v))] * (3000 / max(1, len(r) - 1)), float(v.max() - floor))
+            rgb = self.wf_lut[self.wf_buf]
+            ppm = b"P6 %d %d 255\n" % (self.WF_W, self.WF_H) + rgb.tobytes()
+            try:
+                img = tk.PhotoImage(data=ppm, format="PPM")
+            except tk.TclError:
+                import base64
+                img = tk.PhotoImage(data=base64.b64encode(ppm), format="PPM")
+            self.wf_img = img
+            self.wf.itemconfig(self.wf_item, image=img)
+            self.wf.itemconfig(self.wf_msg, text="")
+            hz, snr = getattr(self, "wf_peak", (0, 0))
+            src = "listen mode" if self.runner is not None and hasattr(self.runner, "submode") else "live"
+            self.wf_info.config(text=f"{src} · strongest {hz:.0f} Hz, {snr:.0f} dB above noise")
+        elif self.wf_mon and self.wf_mon.error and self.wf_mon.stream is None:
+            self.wf.itemconfig(self.wf_msg, text="No receive audio: " + self.wf_mon.error[:70] +
+                               "\nSwitch the radio on, then press Station setup > Refresh.")
+
     def _console(self, parent):
         ttk.Label(parent, text="CONSOLE", style="Section.TLabel").pack(anchor="w", pady=(14, 4))
         frame = ttk.Frame(parent)
@@ -423,14 +770,40 @@ class App(tk.Tk):
             if self.reporter:
                 self.reporter.stop.set()
                 threading.Thread(target=self.reporter.flush, daemon=True).start()
+            self.dec = {"type": "idle"}
             self.set_state("idle", "Finished.")
+        self.handle_events_extra()
         self._tick += 1
+        if self._tick % 3 == 0:
+            self.update_decoder()
+        if self.worker and time.time() >= self.next_heard_poll:
+            self.next_heard_poll = time.time() + 300
+            self.poll_heard_you()
         if self._tick % 5 == 0:
             now = time.gmtime()
             self.utc.config(text=time.strftime("%H:%M:%S", now))
             self.utc_date.config(text=time.strftime("UTC · %a %d %b %Y", now))
             self.update_psk()
         self.after(100, self.poll)
+
+    def handle_events_extra(self):
+        """Decoder events, plus 'heard you' reports from PSK Reporter."""
+        pending = []
+        try:
+            while True:
+                e = self.evq.get_nowait()
+                if e["type"] == "heard_you":
+                    r = e["r"]
+                    self.add_ticker(self.describe(r["call"], r.get("grid", ""), r["snr"] if r["snr"] == r["snr"]
+                                                  else 0, r.get("freq_hz"), r.get("mode", ""), "HEARD YOU:"),
+                                    alert=True)
+                else:
+                    pending.append(e)
+        except queue.Empty:
+            pass
+        for e in pending:
+            self.evq.put(e)
+        self.handle_events()
 
     def busy(self):
         if self.worker:
@@ -480,6 +853,14 @@ class App(tk.Tk):
         self.v_server.set("Test server" if rep.get("pskreporter_test_server", True) else "Live")
         self.cfg_call = st.get("callsign", "")
         self.update_psk()
+        if hasattr(self, "v_sub"):
+            sub = rx.get("submode", "PUMPKIN-60")
+            if sub.startswith("URC-"):
+                sub = "PUMPKIN-" + sub.split("-")[1]
+            self.v_sub.set(sub)
+            self.v_dial.set(f"{float(rx.get('dial_mhz', 144.490)):.3f}")
+        if getattr(self, "wf_mon", None) and rx.get("audio_device", "default") != getattr(self, "wf_dev", None):
+            self.start_waterfall()
 
     # ---------------------------------------------------------- PSK Reporter live panel
     def _make_reporter(self):
@@ -598,10 +979,25 @@ class App(tk.Tk):
         if self.v_psk.get():
             self.reporter = self._make_reporter()
 
+        self.save_listen()
+
         def go():
             from . import monitor
             cfg = load_cfg()
-            self.runner = monitor.Listener(cfg, self.reporter)
+            rc, rx = cfg.get("radio", {}), cfg.get("receive", {})
+            if rc.get("backend") == "hamlib" and rx.get("source", "audio") == "audio":
+                try:
+                    from . import rigctl
+                    from .radio import HamlibRadio
+                    print(rigctl.ensure(cfg))
+                    rig_mode = "FM" if rx.get("mode") == "cucumber" else "USB"
+                    r = HamlibRadio(rc["rigctld_host"], rc["rigctld_port"], rc.get("audio_device", "default"))
+                    r.tune(float(rx.get("dial_mhz", 144.49)) * 1e6, rig_mode)
+                    r.sock.close()
+                    print(f"Radio tuned to {float(rx.get('dial_mhz', 144.49)):.4f} MHz {rig_mode}")
+                except Exception as e:      # noqa: BLE001
+                    print(f"Could not tune the radio ({e}); listening on its current frequency.")
+            self.runner = monitor.Listener(cfg, self.reporter, on_event=self.on_listen_event)
             self.runner.run()
         up = " and uploading to PSK Reporter" if self.reporter else ""
         self.print(f"\n> listen: decoding from the radio{up}; spots go to out/spots.jsonl\n")
@@ -624,6 +1020,30 @@ class App(tk.Tk):
             print(rigctl.ensure(cfg))
         self.print("\n> test radio\n")
         self.start(go, "Connecting to the radio...")
+
+    def demos_menu(self):
+        m = tk.Menu(self, tearoff=0, bg=C["panel2"], fg=C["ink"], activebackground=C["orange"],
+                    activeforeground=C["dark"], font=(UI, 10))
+        for label, cmd in [
+                ("Pumpkin demo: decode 29 dB below the noise",
+                 lambda: self.cli(["pumpkin-loopback", "--submode", "PUMPKIN-60", "--snr", "-29"])),
+                ("Cucumber demo: FM link 8 dB below the noise",
+                 lambda: self.cli(["cucumber-loopback", "--submode", "CUCUMBER-15", "--cnr", "-8"])),
+                ("UR demo: 19 dB below the noise", lambda: self.cli(["ur-loopback", "--submode", "UR-15",
+                                                                     "--snr", "-19"])),
+                ("Map demo (sample pumpkins)", lambda: self.cli(["map", "--demo", "--open"])),
+                ("Link budget, 400 km 2 m path", lambda: self.cli(["link-budget", "--example"])),
+                ("Show a test decode alert", lambda: self.on_decode(
+                    {"call": "TEST1", "grid": "FK93", "snr": -21, "freq_hz": 144491500, "mode": "PUMPKIN"})),
+                ("Open output folder", self.open_out)]:
+            m.add_command(label=label, command=cmd)
+        try:
+            m.tk_popup(self.winfo_pointerx(), self.winfo_pointery())
+        finally:
+            m.grab_release()
+
+    def bands_modes(self):
+        BandsModesWindow(self)
 
     def setup(self):
         SetupWindow(self)
@@ -661,6 +1081,8 @@ class App(tk.Tk):
         if self.reporter:
             self.reporter.stop.set()
             self.reporter.flush()
+        if self.wf_mon:
+            self.wf_mon.stop()
         from . import rigctl
         rigctl.stop()
         self.destroy()
@@ -922,6 +1344,89 @@ def test_radio_async(widget, cfg, done):
             ok, msg = False, str(e)
         widget.after(0, lambda: done(ok, msg))
     threading.Thread(target=go, daemon=True).start()
+
+
+MODE_HELP = {
+    "aprs": "APRS position beacon, FM, 1200 baud. Heard by APRS digipeaters and i-gates (aprs.fi).",
+    "ft8": "FT8, USB. 15-second slots, decoded by WSJT-X stations worldwide. Needs WSJT-X installed.",
+    "wspr": "WSPR, USB. 2-minute beacon, reported on wsprnet.org. Needs WSJT-X installed.",
+    "pumpkin": "Pumpkin, USB. Uranus coherent weak-signal mode, down to about -31 dB. Needs a GPS-locked "
+               "radio at both ends for full sensitivity.",
+    "cucumber": "Cucumber, FM. Pumpkin through an FM radio; decodes far below where voice stops. Agree a "
+                "simplex channel locally.",
+    "ur": "UR, USB. Uranus noncoherent weak-signal mode; no GPS needed.",
+}
+
+
+class BandsModesWindow(tk.Toplevel):
+    """Tick bands, and each mode and frequency inside them, on or off."""
+
+    def __init__(self, app):
+        super().__init__(app)
+        self.app = app
+        self.title("Uranus - Bands and modes")
+        self.configure(bg=C["bg"])
+        self.resizable(False, False)
+        try:
+            self.cfg = load_cfg()
+        except Exception as e:               # noqa: BLE001
+            messagebox.showerror("Settings", str(e))
+            self.destroy()
+            return
+        f = ttk.Frame(self, padding=18)
+        f.pack(fill="both")
+        ttk.Label(f, text="Bands and modes", style="Big.TLabel").pack(anchor="w")
+        tk.Label(f, text="Untick anything you do not want the beacon to send. Greyed-out bands are off as a whole. "
+                         "Check your licence before ticking a frequency.", bg=C["bg"], fg=C["muted"], font=(UI, 10),
+                 wraplength=620, justify="left").pack(anchor="w", pady=(4, 12))
+        cols = ttk.Frame(f)
+        cols.pack(fill="x")
+        self.v_band, self.v_slot = {}, {}
+        names = {"2m": "2 m", "1.25m": "1.25 m (220 MHz)", "70cm": "70 cm"}
+        for band in self.cfg.get("band", []):
+            bn = band["name"]
+            col = tk.Frame(cols, bg=C["panel"], padx=14, pady=10)
+            col.pack(side="left", fill="y", padx=(0, 10))
+            self.v_band[bn] = tk.BooleanVar(value=band.get("active", True))
+            cb = ttk.Checkbutton(col, text=names.get(bn, bn), variable=self.v_band[bn], style="Card.TCheckbutton")
+            cb.pack(anchor="w", pady=(0, 6))
+            Tooltip(cb, "Switch the whole band on or off.")
+            for i, sl in enumerate(band.get("slot", [])):
+                v = tk.BooleanVar(value=sl.get("enabled", True))
+                self.v_slot[(bn, i)] = v
+                label = f"{sl['mode'].upper():9s} {sl['freq_mhz']:.3f}"
+                if sl.get("submode"):
+                    label += f"  {sl['submode'].split('-')[1]}s"
+                c = ttk.Checkbutton(col, text=label, variable=v, style="Slot.TCheckbutton")
+                c.pack(anchor="w")
+                Tooltip(c, MODE_HELP.get(sl["mode"], sl["mode"]) + f"\nFrequency {sl['freq_mhz']:.3f} MHz.")
+        bb = ttk.Frame(f)
+        bb.pack(fill="x", pady=(14, 0))
+        b = ttk.Button(bb, text="Save", style="Accent.TButton", command=self.save)
+        b.pack(side="right")
+        Tooltip(b, "Save, then press Show plan to see the new transmit schedule.")
+        ttk.Button(bb, text="Close", command=self.destroy).pack(side="right", padx=8)
+
+    def save(self):
+        from . import radios
+        with open(CONFIG, encoding="utf-8") as fh:
+            t = fh.read()
+        for bn, v in self.v_band.items():
+            t = radios.set_band_active(t, bn, v.get())
+        for (bn, i), v in self.v_slot.items():
+            t = radios.set_slot_enabled(t, bn, i, v.get())
+        import tomllib
+        try:
+            tomllib.loads(t)
+        except Exception as e:               # noqa: BLE001
+            messagebox.showerror("Settings", f"Not saved: {e}", parent=self)
+            return
+        with open(CONFIG, "w", encoding="utf-8") as fh:
+            fh.write(t)
+        self.app.refresh_station()
+        self.app.set_state("ok", "Bands and modes saved. Press Show plan to see the schedule.")
+        self.app.print("Bands and modes saved.\n")
+        self.destroy()
 
 
 # --------------------------------------------------------------------- setup wizard

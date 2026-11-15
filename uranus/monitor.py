@@ -27,10 +27,28 @@ FS = 12000
 def record(seconds, device="default", fs=FS):
     try:
         import sounddevice as sd
+        from . import spectrum
         from .audiodev import resolve
         dev = resolve(device, "in")
-        x = sd.rec(int(seconds * fs), samplerate=fs, channels=1, dtype="float32", device=dev, blocking=True)
-        return x[:, 0].astype(float)
+        n = int(seconds * fs)
+        chunks, got, done = [], [0], threading.Event()
+
+        def cb(data, frames, t, status):
+            block = data[:, 0].copy()
+            chunks.append(block)
+            got[0] += len(block)
+            if fs == spectrum.FS:
+                spectrum.publish(block)          # live waterfall from the same audio
+            if got[0] >= n:
+                done.set()
+        spectrum.external(True)
+        try:
+            with sd.InputStream(samplerate=fs, channels=1, dtype="float32", device=dev, blocksize=600, callback=cb):
+                done.wait(seconds + 10)
+        finally:
+            spectrum.external(False)
+        x = np.concatenate(chunks) if chunks else np.zeros(0)
+        return np.pad(x, (0, max(0, n - len(x))))[:n].astype(float)
     except ImportError:
         pass
     if not shutil.which("arecord"):
@@ -45,7 +63,7 @@ def record(seconds, device="default", fs=FS):
 
 
 class Listener:
-    def __init__(self, cfg, reporter=None, spot_path=spots.DEFAULT_PATH):
+    def __init__(self, cfg, reporter=None, spot_path=spots.DEFAULT_PATH, on_event=None):
         st, rx = cfg["station"], cfg.get("receive", {})
         self.call, self.grid = st["callsign"], st["grid"]
         self.mode = {"urc": "pumpkin"}.get(rx.get("mode", "pumpkin"), rx.get("mode", "pumpkin"))
@@ -62,6 +80,7 @@ class Listener:
         self.rtl_ppm, self.rtl_gain = rx.get("rtl_ppm", 0), rx.get("rtl_gain", 40)
         self.reporter = reporter
         self.spot_path = spot_path
+        self.on_event = on_event or (lambda e: None)
         self.stop = threading.Event()
         if self.mode == "pumpkin":
             self.T, self.period = pumpkin.SUBMODES[self.submode], pumpkin.PERIODS[self.submode]
@@ -92,31 +111,43 @@ class Listener:
                 r["freq_hz"] = int(self.dial_hz + r.get("freq", self.f0))
         return mode, res
 
+    def _info(self):
+        return {"submode": self.submode, "dial_hz": self.dial_hz, "period": self.period,
+                "rec_s": self.frame_s + 4.5}
+
     def run(self, slots=None):
         log.info("Listening for %s on %.4f MHz dial (+%d Hz), %s slots",
                  self.submode, self.dial_hz / 1e6, self.f0, self.period)
         n = 0
         while not self.stop.is_set() and (slots is None or n < slots):
             start = math.ceil(time.time() / self.period) * self.period
+            self.on_event({"type": "waiting", "start": start, **self._info()})
             while not self.stop.is_set() and time.time() < start - 0.3:
                 self.stop.wait(min(0.5, start - 0.3 - time.time()))
             if self.stop.is_set():
                 break
+            self.on_event({"type": "recording", "start": start, "end": start + self.frame_s + 4.5, **self._info()})
             if self.source == "rtl_fm":
                 x = sdr.rtl_record(self.frame_s + 4.5, self.dial_hz, self.rtl_ppm, self.rtl_gain)
             else:
                 x = record(self.frame_s + 4.5, self.device)
+            self.on_event({"type": "decoding", "start": start, **self._info()})
+            level_db = float(20 * np.log10(np.sqrt(np.mean(np.square(x))) + 1e-9)) if len(x) else -120.0
             mode, res = self.decode(x)
             for r in res:
                 if r.get("kind") == "text":
                     log.info("TEXT  [%d%s] %r  %+.1f dB", r["seq"], "+" if r["more"] else "", r["text"], r["snr"])
+                    self.on_event({"type": "text", "text": r["text"], "snr": r["snr"], "mode": mode, "start": start})
                     continue
                 extra = {k: r[k] for k in ("fade_db", "spread_hz") if k in r}
                 sp = spots.add({"call": r["call"], "grid": r["grid"], "snr": r["snr"], "freq_hz": r["freq_hz"],
                                 "mode": mode, "direction": "rx", "slot": int(start), **extra}, self.spot_path)
                 log.info("DECODE %s %s %+.1f dB  %.6f MHz", r["call"], r["grid"], r["snr"], r["freq_hz"] / 1e6)
+                self.on_event({"type": "decode", "spot": sp})
                 if self.reporter:
                     self.reporter.add(sp)
             if not res:
                 log.info("slot %s: no decode", time.strftime("%H:%M:%S", time.gmtime(start)))
+            self.on_event({"type": "result", "start": start, "count": len(res), "level_db": level_db,
+                           **self._info()})
             n += 1

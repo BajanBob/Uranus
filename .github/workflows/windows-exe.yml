@@ -108,6 +108,10 @@ jobs:
             Compress-Archive -Path $d -DestinationPath "$d.zip" -Force
           }
 
+      - name: Zip screenshots
+        shell: pwsh
+        run: Compress-Archive -Path screenshots/* -DestinationPath Uranus-screenshots.zip -Force
+
       - name: Read version
         id: ver
         shell: pwsh
@@ -126,10 +130,11 @@ jobs:
             Windows: Uranus-Windows-exe.zip - unzip and double-click Uranus.exe (no Python needed).
             Raspberry Pi: Uranus-RaspberryPi.zip - unzip and run  bash linux/install-pi.sh
             Linux: Uranus-Linux.zip - unzip and run  bash linux/install-linux.sh
-            New in this version: plug and play radio control. Hamlib is built in (hamlib folder) and starts by itself; no install, no model number. Press Test radio.
+            New in this version: live waterfall, decoder status with slot countdown, scrolling HEARD ticker with alerts, Bands and modes window, pumpkin markers on the station map. Hamlib built in (plug and play).
             Free software under GPL-3.0. Testers wanted worldwide: report results under Issues.
           files: |
             Uranus-Windows-exe.zip
             Uranus-RaspberryPi.zip
             Uranus-Linux.zip
+            Uranus-screenshots.zip
           make_latest: true
