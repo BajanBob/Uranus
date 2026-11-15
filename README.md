@@ -32,7 +32,7 @@ Run `python -m uranus plan` to see the exact timeline.
 
 * **Raspberry Pi** running NTP. Accurate time is essential for FT8, WSPR and UR.
 * **An all-mode 2 m / 70 cm rig with CAT and a USB sound card**, for example
-  an IC-9700, IC-705 or FT-991A. FT8, WSPR and UR need USB (SSB) mode; APRS
+  an IC-9700, IC-9100, IC-705 or FT-991A. FT8, WSPR and UR need USB (SSB) mode; APRS
   uses FM.
 * **For Pumpkin, a GPSDO-locked rig at BOTH ends** (frequency within ±0.6 Hz for
   PUMPKIN-60). UR and the WSJT-X modes work with an ordinary TCXO.

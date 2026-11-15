@@ -8,6 +8,7 @@ you hover over it.
 |---|---|---|---|---|
 | Generic CAT rig with USB audio | 2 m, 70 cm | SSB + FM | built-in | hamlib |
 | Icom IC-9700 | 2 m, 70 cm | SSB + FM | built-in | hamlib |
+| Icom IC-9100 | 2 m, 70 cm (+HF/6 m) | SSB + FM | built-in | hamlib |
 | Icom IC-705 | 2 m, 70 cm | SSB + FM | built-in | hamlib |
 | Icom IC-905 | 2 m, 70 cm | SSB + FM | built-in | hamlib |
 | Yaesu FT-991A | 2 m, 70 cm | SSB + FM | built-in | hamlib |

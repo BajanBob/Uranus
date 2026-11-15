@@ -43,6 +43,11 @@ PROFILES = [
     Profile("Icom IC-9700", "transceiver", ["2m", "70cm"], True, "built-in", "hamlib", "IC-9700",
             "All-mode 2 m / 70 cm / 23 cm base station. Excellent for Pumpkin; accepts a 10 MHz GPS reference "
             "for frequency lock, which Pumpkin needs at both ends. No 1.25 m."),
+    Profile("Icom IC-9100", "transceiver", ["2m", "70cm"], True, "built-in", "hamlib", "IC-9100",
+            "HF / 6 m / 2 m / 70 cm all-mode base station (23 cm with the UX-9100 unit). One USB cable "
+            "carries CAT and audio: install Icom's USB driver, set CI-V USB baud 19200, address 7C, and "
+            "DATA MOD = USB. Use USB-D for FT8/WSPR/UR and FM-D for APRS/Cucumber. Pumpkin needs the rig "
+            "locked to a GPS reference (stock oscillator drifts too much). No 1.25 m."),
     Profile("Icom IC-705", "transceiver", ["2m", "70cm"], True, "built-in", "hamlib", "IC-705",
             "Portable HF to 70 cm, 10 W. Also a good IF rig for a 222 MHz transverter."),
     Profile("Icom IC-905", "transceiver", ["2m", "70cm"], True, "built-in", "hamlib", "IC-905",
