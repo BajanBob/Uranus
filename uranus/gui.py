@@ -1039,7 +1039,7 @@ class App(tk.Tk):
             from . import rigctl
             print(rigctl.ensure(cfg))
             radio = HamlibRadio(rc["rigctld_host"], rc["rigctld_port"],
-                                rc.get("audio_device", "default"), max_tx_s=rc.get("max_tx_s", 320))
+                                rc.get("audio_device", "default"), max_tx_s=rc.get("max_tx_s", 320, data_mode=rc.get("data_mode", True)))
         return scheduler.Runner(cfg, slots, radio)
 
     def dry_run(self):
@@ -1080,7 +1080,7 @@ class App(tk.Tk):
                     from .radio import HamlibRadio
                     print(rigctl.ensure(cfg))
                     rig_mode = "FM" if rx.get("mode") in ("cucumber", "aprs") else "USB"
-                    r = HamlibRadio(rc["rigctld_host"], rc["rigctld_port"], rc.get("audio_device", "default"))
+                    r = HamlibRadio(rc["rigctld_host"], rc["rigctld_port"], rc.get("audio_device", "default"), data_mode=rc.get("data_mode", True))
                     r.tune(float(rx.get("dial_mhz", 144.49)) * 1e6, rig_mode)
                     r.sock.close()
                     print(f"Radio tuned to {float(rx.get('dial_mhz', 144.49)):.4f} MHz {rig_mode}")
@@ -1341,6 +1341,9 @@ class SetupWindow(tk.Toplevel):
                                                         "switching the radio on or plugging in its USB cable."),
                 ("Test radio", self.test_radio, "Go", "Connect to the radio with the settings above and read "
                                                       "its frequency. Hamlib is built in and starts by itself."),
+                ("Test transmit", self.test_tx, None, "Send a 5-second 1500 Hz tone through the radio, in its "
+                                                    "data mode (USB-D), on the frequency it is tuned to. The power "
+                                                    "meter should rise. Asks first."),
                 ("Save settings", self.save, "Accent", "Save everything on this page. Your settings are kept "
                                                        "when you close Uranus and when you install a new version."),
                 ("Close", self.close, None, "Close this window. If you changed something, Uranus asks whether "
@@ -1465,6 +1468,14 @@ class SetupWindow(tk.Toplevel):
             out.append(ln)
         return "".join(out)
 
+    def test_tx(self):
+        rc = dict(self.cfg.get("radio", {}), profile=self.v["profile"].get(),
+                  cat_port=port_from_label(self.v["cat_port"].get()), cat_baud=self.v["cat_baud"].get() or 19200,
+                  audio_device=self.ad.spec_from_label(self.v["audio_out"].get()))
+        if self.v["hamlib_model"].get().strip().isdigit():
+            rc["hamlib_model"] = int(self.v["hamlib_model"].get())
+        test_transmit(self, {"radio": rc}, self.app)
+
     def test_radio(self):
         rc = dict(self.cfg.get("radio", {}), profile=self.v["profile"].get(),
                   cat_port=port_from_label(self.v["cat_port"].get()), cat_baud=self.v["cat_baud"].get() or 19200)
@@ -1474,6 +1485,46 @@ class SetupWindow(tk.Toplevel):
             rc.pop("hamlib_model", None)
         test_radio_async(self, {"radio": rc}, lambda ok, msg: messagebox.showinfo(
             "Test radio", msg, parent=self) if ok else messagebox.showerror("Test radio", msg, parent=self))
+
+
+def test_transmit(widget, cfg, app):
+    """Key the radio for 5 s with a 1500 Hz tone in data mode, on its current frequency."""
+    from . import rigctl
+    try:
+        host, port = cfg["radio"].get("rigctld_host", "127.0.0.1"), cfg["radio"].get("rigctld_port", 4532)
+        rigctl.stop()
+        rigctl.ensure(cfg)
+        hz = rigctl.read_frequency(host, port)
+    except Exception as e:                          # noqa: BLE001
+        messagebox.showerror("Test transmit", f"Could not reach the radio:\n{e}", parent=widget)
+        return
+    if not messagebox.askyesno("Test transmit", f"Transmit a steady 1500 Hz tone for 5 seconds on "
+                               f"{hz / 1e6:.4f} MHz (USB-D)?\n\nUse a clear frequency your licence allows, "
+                               "and a dummy load or low power if you can. Watch the radio's Po meter.",
+                               parent=widget):
+        return
+
+    def go():
+        import numpy as np
+        from .radio import HamlibRadio
+        try:
+            rc = cfg["radio"]
+            r = HamlibRadio(host, port, rc.get("audio_device", "default"), data_mode=rc.get("data_mode", True))
+            r.tune(hz, "USB")
+            fs = 12000
+            t = np.arange(5 * fs) / fs
+            tone = 0.5 * np.sin(2 * np.pi * 1500 * t) * np.minimum(1, np.minimum(t, 5 - t) / 0.05)
+            r.transmit(hz, "USB", tone.astype(np.float32), fs, "test-tone")
+            r.sock.close()
+            msg = ("Sent 5 s of 1500 Hz in USB-D. If the Po meter stayed at zero: raise the Windows volume of "
+                   "'Speakers (USB Audio CODEC)' to about 50%, and on the IC-9100 set DATA MOD = USB and "
+                   "USB MOD Level to about 50%.")
+            widget.after(0, lambda: messagebox.showinfo("Test transmit", msg, parent=widget))
+        except Exception as e:                      # noqa: BLE001
+            err = str(e)
+            widget.after(0, lambda: messagebox.showerror("Test transmit", err, parent=widget))
+    app.print(f"Test transmit: 5 s tone on {hz / 1e6:.4f} MHz USB-D\n")
+    threading.Thread(target=go, daemon=True).start()
 
 
 def test_radio_async(widget, cfg, done):
@@ -2137,7 +2188,7 @@ class ChatWindow(tk.Toplevel):
             else:
                 from . import rigctl
                 self.say(rigctl.ensure(cfg) + "\n", "info")
-                radio = HamlibRadio(rc["rigctld_host"], rc["rigctld_port"], rc.get("audio_device", "default"))
+                radio = HamlibRadio(rc["rigctld_host"], rc["rigctld_port"], rc.get("audio_device", "default"), data_mode=rc.get("data_mode", True))
             self.engine = self.chatmod.ChatEngine(cfg, radio, self.v_sub.get(), freq,
                                                   0 if self.v_slot.get() == "even" else 1, self.on_event)
         except Exception as e:                # noqa: BLE001
@@ -2179,6 +2230,10 @@ class ChatWindow(tk.Toplevel):
 
 
 def _open(path):
+    if str(path).lower().endswith((".html", ".htm")):
+        from .browser import open_html
+        open_html(path)
+        return
     if os.name == "nt":
         os.startfile(path)                   # noqa: S606 - opens with the default app
     elif shutil.which("xdg-open"):

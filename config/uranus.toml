@@ -51,7 +51,7 @@ retries = 3
 
 [rig_modes]                  # Hamlib mode names
 aprs = "FM"
-ft8 = "USB"                  # use "PKTUSB" if your rig needs a data mode for USB audio
+ft8 = "USB"                  # sent as the data mode (PKTUSB = USB-D) when [radio] data_mode = true
 wspr = "USB"
 ur = "USB"
 
@@ -60,6 +60,7 @@ profile = "Generic CAT rig with USB audio"   # see the Station setup window for 
 backend = "dry-run"          # "dry-run" (writes WAVs), "hamlib" (CAT rig) or "hackrf" (SDR transmit)
 rigctld_host = "127.0.0.1"
 rigctld_port = 4532
+data_mode = true             # USB-D / FM-D: transmit audio from the radio's USB sound card, not the mic
 audio_device = "default"     # ALSA device of the rig's USB sound card, e.g. "plughw:1,0"
 max_tx_s = 320
 

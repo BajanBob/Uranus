@@ -29,7 +29,6 @@ import wave
 import numpy as np
 
 import os
-import webbrowser
 
 from . import aprs, cucumber, linkbudget, mapgen, monitor, pskreporter, scheduler, sim, spots, pumpkin, urmode
 from .radio import DryRunRadio, HamlibRadio, write_wav
@@ -158,7 +157,7 @@ def main(argv=None):
             from . import rigctl
             print(rigctl.ensure(cfg))
             radio = HamlibRadio(rc["rigctld_host"], rc["rigctld_port"],
-                                rc.get("audio_device", "default"), max_tx_s=rc.get("max_tx_s", 320))
+                                rc.get("audio_device", "default"), max_tx_s=rc.get("max_tx_s", 320, data_mode=rc.get("data_mode", True)))
         scheduler.Runner(cfg, slots, radio).run(cycles=1 if args.once else None)
     elif args.cmd == "aprs-wav":
         audio, fs = scheduler.Runner(cfg, slots, None).audio_for(
@@ -263,7 +262,7 @@ def main(argv=None):
         else:
             from . import rigctl
             print(rigctl.ensure(cfg))
-            radio = HamlibRadio(rc["rigctld_host"], rc["rigctld_port"], rc.get("audio_device", "default"))
+            radio = HamlibRadio(rc["rigctld_host"], rc["rigctld_port"], rc.get("audio_device", "default"), data_mode=rc.get("data_mode", True))
 
         def show(e):
             t = e.get("type")
@@ -331,7 +330,8 @@ def main(argv=None):
                                   online_min=rep_cfg.get("online_minutes", 30)))
         print(f"wrote {args.out}: {len(stations)} station(s)")
         if args.open:
-            webbrowser.open("file://" + os.path.abspath(args.out))
+            from .browser import open_html
+            open_html(args.out)
     elif args.cmd == "ur-sim":
         es = np.arange(0.0, 6.1, 0.5)
         rows = {"plain": sim.ideal_sync_curve(es, args.trials),

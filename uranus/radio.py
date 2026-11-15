@@ -54,8 +54,9 @@ class DryRunRadio:
 
 class HamlibRadio:
     def __init__(self, host="127.0.0.1", port=4532, audio_device="default",
-                 ptt_lead_s=0.15, max_tx_s=320):
+                 ptt_lead_s=0.15, max_tx_s=320, data_mode=True):
         self.addr = (host, port)
+        self.data_mode = data_mode
         self.audio_device = audio_device
         self.ptt_lead_s = ptt_lead_s
         self.max_tx_s = max_tx_s
@@ -101,9 +102,21 @@ class HamlibRadio:
                     time.sleep(0.2)
             os.unlink(tmp)
 
+    # Data modes take the transmit audio from the rig's USB sound card instead of the
+    # microphone (Icom USB-D / FM-D, Yaesu DATA-USB / DATA-FM). WSJT-X does the same.
+    DATA_MODE = {"USB": "PKTUSB", "LSB": "PKTLSB", "FM": "PKTFM"}
+
     def tune(self, freq_hz, rig_mode):
         self._cmd(f"F {int(freq_hz)}")
-        self._cmd(f"M {rig_mode} 0")
+        want = self.DATA_MODE.get(rig_mode, rig_mode) if self.data_mode else rig_mode
+        try:
+            self._cmd(f"M {want} 0")
+        except RuntimeError:
+            if want == rig_mode:
+                raise
+            log.warning("radio refused data mode %s; using %s. Set the radio to take its transmit audio "
+                        "from USB in plain %s (Icom menu: DATA OFF MOD = USB)", want, rig_mode, rig_mode)
+            self._cmd(f"M {rig_mode} 0")
         time.sleep(0.3)
 
 

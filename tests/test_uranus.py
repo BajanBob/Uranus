@@ -345,6 +345,29 @@ class TestBandsRadiosSDR(unittest.TestCase):
         m = wsjt._FT8_LINE.match("000000 -12  0.2 1234 ~  CQ K1ABC FN42")
         self.assertEqual(m.group(5), "CQ K1ABC FN42")
 
+    def test_hamlib_uses_data_mode_with_fallback(self):
+        from uranus.radio import HamlibRadio
+        r = HamlibRadio.__new__(HamlibRadio)
+        sent = []
+
+        def cmd(text, refuse=()):
+            sent.append(text)
+            if text.split()[0] == "M" and text.split()[1] in refuse:
+                raise RuntimeError("RPRT -11")
+            return "RPRT 0"
+        r.data_mode, r._cmd = True, cmd
+        r.tune(144_174_000, "USB")
+        r.tune(144_390_000, "FM")
+        self.assertEqual(sent, ["F 144174000", "M PKTUSB 0", "F 144390000", "M PKTFM 0"])
+        sent.clear()
+        r._cmd = lambda t: cmd(t, refuse=("PKTUSB",))
+        r.tune(144_174_000, "USB")                             # rig without data modes: plain USB
+        self.assertEqual(sent, ["F 144174000", "M PKTUSB 0", "M USB 0"])
+        sent.clear()
+        r.data_mode, r._cmd = False, cmd
+        r.tune(144_174_000, "USB")
+        self.assertEqual(sent, ["F 144174000", "M USB 0"])
+
     def test_pskreporter_live_status(self):
         from uranus import pskreporter
         r = pskreporter.Reporter("8P5AB", "GK03", test=True)
