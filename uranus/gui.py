@@ -72,6 +72,48 @@ def _older_settings():
     return sorted(good, key=os.path.getmtime, reverse=True)
 
 
+def _band_blocks(text):
+    """{band name: its [[band]] text block} from a settings file."""
+    import re as _re
+    out = {}
+    starts = [m.start() for m in _re.finditer(r"(?m)^\[\[band\]\]\s*$", text)] + [len(text)]
+    for a, b in zip(starts, starts[1:]):
+        block = text[a:b]
+        m = _re.search(r'(?m)^name\s*=\s*"([^"]+)"', block)
+        if m:
+            lines = block.rstrip("\n").split("\n")
+            while lines and lines[-1].lstrip().startswith("#"):
+                lines.pop()                      # the next band's heading comment
+            out[m.group(1)] = "\n".join(lines).rstrip() + "\n"
+    return out
+
+
+UPGRADED_BANDS = []
+
+
+def upgrade_config():
+    """Add bands that newer versions ship (e.g. HF) to an older settings file, switched off. Nothing else changes."""
+    import tomllib
+    try:
+        with open(CONFIG, encoding="utf-8") as fh:
+            mine = fh.read()
+        with open(bundled(os.path.join("config", "uranus.toml")), encoding="utf-8") as fh:
+            default = fh.read()
+        have = {b["name"] for b in tomllib.loads(mine).get("band", [])}
+        new = {k: v for k, v in _band_blocks(default).items() if k not in have}
+        if not new:
+            return
+        text = mine.rstrip("\n") + "\n\n# ---- bands added by Uranus " + __version__ + " (switched off)\n"
+        for name, block in new.items():
+            text += "\n" + block.replace("active = true", "active = false", 1)
+        tomllib.loads(text)
+        with open(CONFIG, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        UPGRADED_BANDS.extend(new)
+    except Exception:                            # noqa: BLE001 - never block start-up
+        pass
+
+
 def ensure_config():
     global MIGRATED_FROM
     if os.path.exists(CONFIG):
@@ -170,7 +212,7 @@ def apply_theme(root):
     st.map("Slot.TCheckbutton", background=[("active", C["panel"])], indicatorcolor=[("selected", C["orange"])],
            foreground=[("disabled", C["muted"])])
     st.configure("TNotebook", background=C["bg"], borderwidth=0)
-    st.configure("TNotebook.Tab", background=C["panel2"], foreground=C["muted"], padding=(14, 6), font=(UI, 10, "bold"))
+    st.configure("TNotebook.Tab", background=C["panel2"], foreground=C["muted"], padding=(8, 5), font=(UI, 9, "bold"))
     st.map("TNotebook.Tab", background=[("selected", C["panel"])], foreground=[("selected", C["orange"])])
     st.configure("TCombobox", fieldbackground=C["panel2"], background=C["panel2"], foreground=C["ink"],
                  arrowcolor=C["orange"], padding=4)
@@ -273,6 +315,7 @@ class App(tk.Tk):
         self.wf_mon = None
         os.chdir(BASE)
         ensure_config()
+        upgrade_config()
 
         handler = logging.StreamHandler(_QueueWriter(self.q))
         handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s", "%H:%M:%S"))
@@ -296,6 +339,8 @@ class App(tk.Tk):
 
         self.print(f"Uranus {__version__}\nFolder: {BASE}\nSettings: {CONFIG}\n"
                    + (f"Your settings were brought over from {MIGRATED_FROM}\n" if MIGRATED_FROM else "")
+                   + (f"New bands added to your settings (switched off): {', '.join(UPGRADED_BANDS)}\n"
+                      if UPGRADED_BANDS else "")
                    + "Hover over any control for help.\n\n")
         self.refresh_station()
         self.set_state("idle", "Ready. New here? Press 'Setup wizard'.")
@@ -524,9 +569,8 @@ class App(tk.Tk):
     def _dial_options(self, sub):
         from . import freqplan
         mode = MODE_OF[sub.split("-")[0]]
-        names = {"2m": "2 m", "1.25m": "1.25 m", "70cm": "70 cm"}
-        return [f"{o.mhz:.3f}   {names[o.band]} · {o.status} · {o.note}" for b in ("2m", "1.25m", "70cm")
-                for o in freqplan.options(b, mode)]
+        return [f"{o.mhz:.4f}".rstrip("0") + f"   {freqplan.BAND_NAMES[o.band]} · {o.status} · {o.note}"
+                for b in freqplan.BAND_EDGES for o in freqplan.options(b, mode)]
 
     def save_listen(self, mode_changed=False):
         sub = self.v_sub.get()
@@ -653,9 +697,12 @@ class App(tk.Tk):
 
     @staticmethod
     def band_of(hz):
+        from .freqplan import BAND_EDGES, BAND_NAMES
         mhz = (hz or 0) / 1e6
-        return "2 m" if 144 <= mhz <= 148 else "1.25 m" if 219 <= mhz <= 225 else "70 cm" if 420 <= mhz <= 450 else \
-            f"{mhz:.3f} MHz"
+        for b, (lo, hi) in BAND_EDGES.items():
+            if lo - 0.01 <= mhz <= hi + 0.01:
+                return BAND_NAMES[b]
+        return f"{mhz:.3f} MHz"
 
     def describe(self, call, grid, snr, hz, mode, prefix):
         from . import geo
@@ -941,8 +988,8 @@ class App(tk.Tk):
                                 ("Audio from radio", rx.get("audio_device", "default"), "in")):
             mark = "★ " if audiodev.is_codec(str(spec)) else ""
             self.st_rows[key].config(text=f"{mark}{spec}")
-        names = {"2m": "2 m", "1.25m": "1.25 m", "70cm": "70 cm"}
-        on = [names.get(b["name"], b["name"]) for b in cfg.get("band", []) if b.get("active", True)]
+        from .freqplan import BAND_NAMES
+        on = [BAND_NAMES.get(b["name"], b["name"]) for b in cfg.get("band", []) if b.get("active", True)]
         self.st_rows["Bands"].config(text=" · ".join(on) or "none")
         rep = cfg.get("reporting", {})
         self.v_psk.set(bool(rep.get("pskreporter", False)))
@@ -1097,6 +1144,8 @@ class App(tk.Tk):
                     from .radio import HamlibRadio
                     print(rigctl.ensure(cfg))
                     rig_mode = "FM" if rx.get("mode") in ("cucumber", "aprs") else "USB"
+                    if float(rx.get("dial_mhz", 144.49)) < 30.0:
+                        rig_mode = "USB"                       # HF: APRS is 300 baud on USB
                     r = HamlibRadio(rc["rigctld_host"], rc["rigctld_port"], rc.get("audio_device", "default"), data_mode=rc.get("data_mode", True))
                     r.tune(float(rx.get("dial_mhz", 144.49)) * 1e6, rig_mode)
                     r.sock.close()
@@ -1216,8 +1265,9 @@ def ic9100_note(profile_name):
     if "9100" in profile_name:
         return ("IC-9100: plug in the USB cable, install Icom's USB driver, then set on the radio: "
                 "CI-V USB Baud Rate = 19200, CI-V Address = 7C, CI-V USB Echo Back = OFF, "
-                "USB AF output level ~50%, DATA MOD = USB. Use USB-D for FT8/WSPR/Pumpkin and FM-D for "
-                "APRS/Cucumber.")
+                "USB AF output level ~50%, DATA MOD = USB. Uranus switches to USB-D itself for FT8, WSPR, "
+                "Pumpkin, UR and HF APRS. For FM (VHF APRS, Cucumber) Hamlib cannot select FM-D on the IC-9100: "
+                "set DATA OFF MOD = USB so plain FM takes its audio from USB.")
     return ""
 
 
@@ -1561,7 +1611,8 @@ def test_radio_async(widget, cfg, done):
 MODE_OF = {"PUMPKIN": "pumpkin", "CUCUMBER": "cucumber", "UR": "ur", "FT8": "ft8", "WSPR": "wspr", "APRS": "aprs"}
 
 MODE_HELP = {
-    "aprs": "APRS position beacon, FM, 1200 baud. Heard by APRS digipeaters and i-gates (aprs.fi).",
+    "aprs": "APRS position beacon. VHF/UHF: FM, 1200 baud, heard by digipeaters and i-gates (aprs.fi). "
+            "HF: USB, 300 baud with 1600/1800 Hz tones, no digipeater path.",
     "ft8": "FT8, USB. 15-second slots, decoded by WSJT-X stations worldwide. Needs WSJT-X installed.",
     "wspr": "WSPR, USB. 2-minute beacon, reported on wsprnet.org. Needs WSJT-X installed.",
     "pumpkin": "Pumpkin, USB. Uranus coherent weak-signal mode, down to about -31 dB. Needs a GPS-locked "
@@ -1601,13 +1652,16 @@ class BandsModesWindow(tk.Toplevel):
         nb = ttk.Notebook(f)
         nb.pack(fill="both", expand=True)
         self.v_band, self.v_slot, self.v_freq, self.warn, self.warn_msg = {}, {}, {}, {}, {}
-        names = {"2m": "2 m  144-148 MHz", "1.25m": "1.25 m  222-225 MHz", "70cm": "70 cm  420-450 MHz"}
         for band in self.cfg.get("band", []):
             bn = band["name"]
+            lo, hi = freqplan.BAND_EDGES.get(bn, (0, 0))
+            label = freqplan.BAND_NAMES.get(bn, bn)
+            if bn == "1.25m":
+                lo = 222.0
             tab = tk.Frame(nb, bg=C["panel"], padx=14, pady=12)
-            nb.add(tab, text="  " + names.get(bn, bn).split("  ")[0] + "  ")
+            nb.add(tab, text=label + (" ✓" if band.get("active", True) else ""))
             self.v_band[bn] = tk.BooleanVar(value=band.get("active", True))
-            cb = ttk.Checkbutton(tab, text=f"Use {names.get(bn, bn)}", variable=self.v_band[bn],
+            cb = ttk.Checkbutton(tab, text=f"Use {label}  {lo:g}-{hi:g} MHz", variable=self.v_band[bn],
                                  style="Card.TCheckbutton")
             cb.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
             Tooltip(cb, "Switch the whole band on or off." + (" 1.25 m is a Region 2 band; Barbados allows "

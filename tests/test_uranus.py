@@ -304,11 +304,18 @@ class TestBandsRadiosSDR(unittest.TestCase):
     def test_frequency_plan_inside_itu_allocations(self):
         from uranus import freqplan as fp
         for f in fp.PLAN:
-            self.assertEqual(fp.check(f.band, f.mode, f.mhz, f.region if f.region != "All" else "R2"), "", f)
+            msg = fp.check(f.band, f.mode, f.mhz, f.region if f.region != "All" else "R2")
+            if f.band == "60m":
+                self.assertNotIn("outside", msg, f)            # 60 m always reminds about national rules
+            else:
+                self.assertEqual(msg, "", f)
             self.assertTrue(fp.segment(f.band, f.mhz), f)
         for band in fp.BAND_EDGES:
-            for mode in ("ft8", "pumpkin"):
-                self.assertTrue(fp.options(band, mode), (band, mode))
+            self.assertTrue(fp.options(band, "ft8"), band)
+            if band not in fp.HF_BANDS:
+                self.assertTrue(fp.options(band, "pumpkin"), band)
+            if band not in ("60m", "1.25m"):
+                self.assertTrue(fp.options(band, "wspr") or band == "60m", band)
         self.assertIn("outside", fp.check("2m", "aprs", 148.0))
         self.assertIn("Region 2 only", fp.check("1.25m", "pumpkin", 222.13, "R1"))
         wspr = fp.find("2m", "wspr", 144.489)
@@ -407,6 +414,24 @@ class TestBandsRadiosSDR(unittest.TestCase):
         calls = [e["spot"]["call"] for e in events if e["type"] == "decode"]
         self.assertEqual(calls, ["W1ABC-9"])
         self.assertEqual(events[-1]["type"], "gap_end")
+
+    def test_hf_aprs_300_baud_on_usb(self):
+        import tempfile
+        from scipy.signal import resample_poly
+        from uranus import aprs_rx
+        t = open("config/uranus.toml", encoding="utf-8").read().replace('callsign = "N0CALL"', 'callsign = "8P5AB"', 1)
+        with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False, encoding="utf-8") as f:
+            f.write(t)
+        cfg, slots = scheduler.load_config(f.name)
+        r = scheduler.Runner(cfg, slots, None)
+        hf = scheduler.Slot("30m", "aprs", 10.1476)
+        self.assertEqual(scheduler.rig_mode(hf, scheduler.RIG_MODE_DEFAULT), "USB")
+        self.assertEqual(scheduler.rig_mode(scheduler.Slot("2m", "aprs", 144.39), scheduler.RIG_MODE_DEFAULT), "FM")
+        a, fs = r.audio_for(hf)
+        x = resample_poly(a, 1, 4)
+        self.assertEqual(aprs_rx.decode_audio(x, 12000), [])               # not 1200-baud VHF APRS
+        pkt = aprs_rx.parse_frame(aprs_rx.decode_audio(x, 12000, hf=True)[0])
+        self.assertEqual((pkt["source"], pkt["path"]), ("8P5AB-11", []))     # no digipeater path on HF
 
     def test_pskreporter_live_status(self):
         from uranus import pskreporter

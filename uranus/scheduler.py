@@ -102,6 +102,13 @@ def align(t, slot):
     return start
 
 
+def rig_mode(s, rigmodes):
+    """Radio mode for a slot: APRS is FM on VHF/UHF but USB (300 baud) on HF."""
+    if s.mode == "aprs" and s.freq_mhz < 30.0:
+        return "USB"
+    return rigmodes[s.mode]
+
+
 def bands_of(slots):
     """Group enabled slots by band, keeping file order."""
     bands = []
@@ -163,7 +170,10 @@ class Runner:
             path = tuple(p for p in st.get("aprs_path", "WIDE1-1,WIDE2-1").split(",") if p)
             if abs(s.freq_mhz - 145.825) < 0.001:
                 path = ("ARISS",)            # ISS / satellite digipeaters answer only to ARISS
-            return aprs.packet_audio(src, info, path=path), aprs.FS
+            hf = s.freq_mhz < 30.0           # HF APRS: 300 baud on USB, no digipeater path
+            if hf:
+                path = tuple(p for p in st.get("aprs_hf_path", "").split(",") if p)
+            return aprs.packet_audio(src, info, path=path, hf=hf), aprs.FS
         if s.mode == "ft8":
             return wsjt.ft8_audio(f"CQ {st['callsign']} {st['grid']}", off), wsjt.FS
         if s.mode == "wspr":
@@ -203,7 +213,8 @@ class Runner:
         self._sleep_until(begin - 3)
         if self.stop.is_set():
             return
-        self.radio.tune(s.rig_hz, rigmodes[s.mode])
+        mode = rig_mode(s, rigmodes)
+        self.radio.tune(s.rig_hz, mode)
         if s.mode == "aprs" and cs.get("enabled", True):
             if not self._clear(cs):
                 log.warning("%s: channel busy, skipped", s.label)
@@ -212,7 +223,7 @@ class Runner:
             self._sleep_until(begin)
         log.info("TX %s at %s UTC", s.label,
                  dt.datetime.now(dt.timezone.utc).strftime("%H:%M:%S.%f")[:-3])
-        self.radio.transmit(s.rig_hz, rigmodes[s.mode], audio, fs, s.label)
+        self.radio.transmit(s.rig_hz, mode, audio, fs, s.label)
 
     def _gap(self, s, until):
         """Wait until `until`. If enabled, decode on the slot just sent (same frequency and mode) meanwhile,

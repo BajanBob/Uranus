@@ -15,10 +15,10 @@ from . import aprs
 BAUD = 1200
 
 
-def _bandpass(x, fs):
+def _bandpass(x, fs, lo=900, hi=2500):
     try:
         from scipy.signal import butter, sosfiltfilt
-        sos = butter(4, [900, 2500], btype="band", fs=fs, output="sos")
+        sos = butter(4, [lo, hi], btype="band", fs=fs, output="sos")
         return sosfiltfilt(sos, x)
     except Exception:                            # noqa: BLE001
         return x - np.mean(x)
@@ -35,13 +35,14 @@ def _smooth(v, n):
     return np.convolve(v, np.ones(n) / n, mode="same") + 1e-9
 
 
-def demod_bits(x, fs):
+def demod_bits(x, fs, baud=BAUD, mark=aprs.MARK, space=aprs.SPACE):
     """Yield candidate bit streams (lists of 0/1, NRZI-decoded) from one audio block."""
-    x = _bandpass(np.asarray(x, dtype=float), fs)
-    spb = fs / BAUD
+    lo, hi = min(mark, space), max(mark, space)
+    x = _bandpass(np.asarray(x, dtype=float), fs, max(100, lo - 300), hi + 300)
+    spb = fs / baud
     n = max(2, int(round(spb)))
-    m = _tone_energy(x, aprs.MARK, fs, n)
-    s = _tone_energy(x, aprs.SPACE, fs, n)
+    m = _tone_energy(x, mark, fs, n)
+    s = _tone_energy(x, space, fs, n)
     slow = int(spb * 32)
     variants = [m - s, m / _smooth(m, slow) - s / _smooth(s, slow)]   # plain, de-emphasis compensated
     for d in variants:
@@ -57,7 +58,7 @@ def frames_from_bits(bits):
     s = "".join(map(str, bits))
     out = []
     for p in s.split("01111110"):
-        if len(p) < 136:                         # shorter than a minimal UI frame
+        if len(p) < 136:                         # shorter than a minimal UI frame (no digipeaters)
             continue
         raw, ones, bad = [], 0, False
         for ch in p:
@@ -77,10 +78,11 @@ def frames_from_bits(bits):
     return out
 
 
-def decode_audio(x, fs):
-    """All distinct AX.25 frames in an audio block."""
+def decode_audio(x, fs, hf=False):
+    """All distinct AX.25 frames in an audio block. hf=True: 300 baud, 1600/1800 Hz (HF APRS on USB)."""
     seen, out = set(), []
-    for bits in demod_bits(x, fs):
+    params = (aprs.HF_BAUD, aprs.HF_MARK, aprs.HF_SPACE) if hf else (BAUD, aprs.MARK, aprs.SPACE)
+    for bits in demod_bits(x, fs, *params):
         for fr in frames_from_bits(bits):
             if fr not in seen:
                 seen.add(fr)

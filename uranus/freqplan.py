@@ -17,10 +17,35 @@ default working frequencies, published WSPR and APRS practice.
 from dataclasses import dataclass
 
 # ITU Region 2 amateur allocations (MHz). 1.25 m exists only in Region 2.
-BAND_EDGES = {"2m": (144.0, 148.0), "1.25m": (220.0, 225.0), "70cm": (420.0, 450.0)}
+BAND_EDGES = {"160m": (1.8, 2.0), "80m": (3.5, 4.0), "60m": (5.3515, 5.3665), "40m": (7.0, 7.3),
+              "30m": (10.1, 10.15), "20m": (14.0, 14.35), "17m": (18.068, 18.168), "15m": (21.0, 21.45),
+              "12m": (24.89, 24.99), "10m": (28.0, 29.7), "6m": (50.0, 54.0),
+              "2m": (144.0, 148.0), "1.25m": (220.0, 225.0), "70cm": (420.0, 450.0)}
+HF_BANDS = ("160m", "80m", "60m", "40m", "30m", "20m", "17m", "15m", "12m", "10m", "6m")
+BAND_NAMES = {b: b[:-1] + " m" for b in BAND_EDGES}
+BAND_NAMES.update({"1.25m": "1.25 m", "70cm": "70 cm"})
+
+
+def is_hf(mhz):
+    """HF (and 6 m) frequencies, where APRS runs at 300 baud on USB instead of 1200 baud on FM."""
+    return mhz < 30.0
 
 # Band-plan segments the entries below sit in (Region 2 / ARRL).
-SEGMENTS = {
+_HF_DIGITAL = {      # narrow-band digital segments where WSPR, FT8 and HF packet operate (IARU Region 2)
+    "160m": [(1.836, 1.843, "narrow-band digital (WSPR 1.8366, FT8 1.840)")],
+    "80m": [(3.568, 3.600, "narrow-band digital (WSPR 3.5686, FT8 3.573)")],
+    "60m": [(5.3515, 5.3665, "WRC-15 60 m allocation, all modes to 2.8 kHz (FT8 5.357, WSPR 5.3647)")],
+    "40m": [(7.038, 7.080, "narrow-band digital (WSPR 7.0386, FT8 7.074)")],
+    "30m": [(10.130, 10.150, "narrow-band digital (FT8 10.136, WSPR 10.1387, HF APRS 10.1476)")],
+    "20m": [(14.070, 14.112, "narrow-band digital (FT8 14.074, WSPR 14.0956, HF packet 14.103)")],
+    "17m": [(18.095, 18.109, "narrow-band digital (FT8 18.100, WSPR 18.1046)")],
+    "15m": [(21.070, 21.110, "narrow-band digital (FT8 21.074, WSPR 21.0946)")],
+    "12m": [(24.915, 24.929, "narrow-band digital (FT8 24.915, WSPR 24.9246)")],
+    "10m": [(28.070, 28.190, "narrow-band digital (FT8 28.074, WSPR 28.1246)")],
+    "6m": [(50.280, 50.330, "weak-signal digital (WSPR 50.293, FT8 50.313)")],
+}
+
+SEGMENTS = {**_HF_DIGITAL, 
     "2m": [(144.100, 144.275, "weak-signal SSB/CW and digital (FT8 144.174)"),
            (144.275, 144.300, "propagation beacons (IARU Region 2)"),
            (144.300, 144.500, "ARRL 'new OSCAR' segment, used for WSPR 144.489"),
@@ -57,6 +82,18 @@ class Freq:
 
 
 PLAN = [
+    # ------------------------------------------------------------ HF and 6 m (dial frequencies, USB)
+    *[Freq(band, "ft8", mhz, "All", "standard", "FT8 (WSJT-X default)") for band, mhz in (
+        ("160m", 1.840), ("80m", 3.573), ("60m", 5.357), ("40m", 7.074), ("30m", 10.136), ("20m", 14.074),
+        ("17m", 18.100), ("15m", 21.074), ("12m", 24.915), ("10m", 28.074), ("6m", 50.313))],
+    Freq("6m", "ft8", 50.323, "All", "common", "FT8, alternative 6 m frequency"),
+    *[Freq(band, "wspr", mhz, "All", "standard", "WSPR dial (tones 1.4-1.6 kHz above)") for band, mhz in (
+        ("160m", 1.8366), ("80m", 3.5686), ("60m", 5.3647), ("40m", 7.0386), ("30m", 10.1387),
+        ("20m", 14.0956), ("17m", 18.1046), ("15m", 21.0946), ("12m", 24.9246), ("10m", 28.1246),
+        ("6m", 50.293))],
+    Freq("30m", "aprs", 10.1476, "All", "standard", "HF APRS, 300 baud, USB dial with 1600/1800 Hz tones"),
+    Freq("20m", "aprs", 14.1016, "All", "common", "HF packet NET105 (centre 14.1033; '14.105 LSB'), 300 baud"),
+
     # ------------------------------------------------------------ 2 m
     Freq("2m", "aprs", 144.390, "R2", "standard", "APRS: North America, Caribbean, Colombia, Chile; "
                                                   "also Indonesia, Malaysia, Thailand"),
@@ -121,7 +158,9 @@ def check(band, mode, mhz, region="R2"):
     """'' if fine, else a plain-English warning (outside the allocation, wrong region, no segment)."""
     lo, hi = BAND_EDGES.get(band, (0, 1e9))
     bw = _BW_KHZ.get(mode, 3.0) / 1000
-    occ = (mhz - bw / 2, mhz + bw / 2) if mode in FM_MODES else (mhz, mhz + bw)
+    fm = mode in FM_MODES and not is_hf(mhz)            # HF APRS is 300 baud on USB
+    top_khz = {"wspr": 1.6, "aprs": 2.0}.get(mode, bw * 1000)     # WSPR tones sit 1.4-1.6 kHz above the dial
+    occ = (mhz - bw / 2, mhz + bw / 2) if fm else (mhz, mhz + top_khz / 1000)
     if band == "1.25m" and region != "R2":
         return "1.25 m is allocated to amateurs in ITU Region 2 only."
     if occ[0] < lo or occ[1] > hi:
@@ -129,6 +168,8 @@ def check(band, mode, mhz, region="R2"):
     f = find(band, mode, mhz)
     if f and f.region not in ("All", region):
         return f"{mhz:.3f} MHz is a Region {f.region[1]} frequency; check your licence and local band plan."
+    if band == "60m":
+        return "60 m rules differ from country to country (channels, power, modes): check your licence."
     if not any(a <= mhz <= b for a, b, _ in SEGMENTS.get(band, [])):
         return (f"{mhz:.3f} MHz is not in a band-plan segment Uranus knows for {band}. It may still be legal: "
                 "check your national band plan.")

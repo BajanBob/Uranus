@@ -120,7 +120,7 @@ class Listener:
             block = np.concatenate([self.aprs_tail, x])
             self.aprs_tail = x[-int(1.5 * FS):]           # keep 1.5 s so packets across blocks are caught
             now, res = time.time(), []
-            for fr in aprs_rx.decode_audio(block, FS):
+            for fr in aprs_rx.decode_audio(block, FS, hf=self.dial_hz < 30e6):
                 if now - self.aprs_seen.get(fr, 0) < 30:
                     continue
                 self.aprs_seen[fr] = now

@@ -66,22 +66,29 @@ def hdlc_bits(frame: bytes, preamble_flags=40, tail_flags=4):
     return bits + flag * tail_flags
 
 
-def afsk(bits, fs=FS, amp=0.5):
+# HF APRS: 300 baud with 1600/1800 Hz tones on USB (the usual TinyTrak / Direwolf choice).
+HF_BAUD, HF_MARK, HF_SPACE = 300, 1600.0, 1800.0
+
+
+def afsk(bits, fs=FS, amp=0.5, baud=BAUD, mark=MARK, space=SPACE):
     """NRZI (0 = change tone) + continuous-phase AFSK."""
-    spb = fs / BAUD
-    tone, freqs = MARK, []
+    spb = fs / baud
+    tone, freqs = mark, []
     for b in bits:
         if b == 0:
-            tone = SPACE if tone == MARK else MARK
+            tone = space if tone == mark else mark
         freqs.append(tone)
     n = int(round(len(bits) * spb))
     f = np.asarray(freqs)[(np.arange(n) / spb).astype(int).clip(0, len(freqs) - 1)]
     return (amp * np.sin(2 * np.pi * np.cumsum(f) / fs)).astype(np.float32)
 
 
-def packet_audio(source, info, path=("WIDE1-1", "WIDE2-1"), txdelay_ms=300, fs=FS):
-    flags = max(1, int(txdelay_ms / 1000 * BAUD / 8))
-    return afsk(hdlc_bits(build_frame(source, info, path=path), preamble_flags=flags), fs)
+def packet_audio(source, info, path=("WIDE1-1", "WIDE2-1"), txdelay_ms=300, fs=FS, hf=False):
+    """VHF: 1200 baud Bell 202 for FM. hf=True: 300 baud, 1600/1800 Hz, for USB on HF."""
+    baud, mark, space = (HF_BAUD, HF_MARK, HF_SPACE) if hf else (BAUD, MARK, SPACE)
+    flags = max(2, int(txdelay_ms / 1000 * baud / 8))
+    return afsk(hdlc_bits(build_frame(source, info, path=path), preamble_flags=flags), fs, baud=baud, mark=mark,
+                space=space)
 
 
 # --------------------------------------------------------------------------- self-check demod

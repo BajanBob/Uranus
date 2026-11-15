@@ -24,7 +24,10 @@ class Profile:
     tags: list = field(default_factory=list)
 
     def help(self):
-        bands = ", ".join({"2m": "2 m", "1.25m": "1.25 m (220 MHz)", "70cm": "70 cm"}[b] for b in self.bands)
+        names = {"2m": "2 m", "1.25m": "1.25 m (220 MHz)", "70cm": "70 cm"}
+        hf = [b for b in self.bands if b in HF]
+        vu = [names[b] for b in self.bands if b in names]
+        bands = ", ".join(vu + ([f"HF {hf[0][:-1]}-{hf[-1][:-1]} m" if len(hf) > 1 else hf[0]] if hf else []))
         if self.kind == "sdr-rx":
             modes = "Receive only: decodes Pumpkin/UR (and feeds WSJT-X) but cannot transmit"
         else:
@@ -36,6 +39,8 @@ class Profile:
         return f"{self.name}\nBands: {bands}\nModes: {modes}\n{audio}\nUranus backend: {self.backend}.\n{self.notes}".strip()
 
 
+HF = ["160m", "80m", "60m", "40m", "30m", "20m", "17m", "15m", "12m", "10m", "6m"]
+
 PROFILES = [
     Profile("Generic CAT rig with USB audio", "generic", ["2m", "70cm"], True, "built-in", "hamlib", "",
             "Any Hamlib-supported all-mode rig. Choose this if your radio is not listed."),
@@ -43,21 +48,21 @@ PROFILES = [
     Profile("Icom IC-9700", "transceiver", ["2m", "70cm"], True, "built-in", "hamlib", "IC-9700",
             "All-mode 2 m / 70 cm / 23 cm base station. Excellent for Pumpkin; accepts a 10 MHz GPS reference "
             "for frequency lock, which Pumpkin needs at both ends. No 1.25 m."),
-    Profile("Icom IC-9100", "transceiver", ["2m", "70cm"], True, "built-in", "hamlib", "IC-9100",
+    Profile("Icom IC-9100", "transceiver", ["2m", "70cm"] + HF, True, "built-in", "hamlib", "IC-9100",
             "HF / 6 m / 2 m / 70 cm all-mode base station (23 cm with the UX-9100 unit). One USB cable "
             "carries CAT and audio: install Icom's USB driver, set CI-V USB baud 19200, address 7C, and "
-            "DATA MOD = USB. Use USB-D for FT8/WSPR/UR and FM-D for APRS/Cucumber. Pumpkin needs the rig "
+            "DATA MOD = USB, DATA OFF MOD = USB (for FM). Uranus selects USB-D itself. Pumpkin needs the rig "
             "locked to a GPS reference (stock oscillator drifts too much). No 1.25 m."),
-    Profile("Icom IC-705", "transceiver", ["2m", "70cm"], True, "built-in", "hamlib", "IC-705",
+    Profile("Icom IC-705", "transceiver", ["2m", "70cm"] + HF, True, "built-in", "hamlib", "IC-705",
             "Portable HF to 70 cm, 10 W. Also a good IF rig for a 222 MHz transverter."),
     Profile("Icom IC-905", "transceiver", ["2m", "70cm"], True, "built-in", "hamlib", "IC-905",
             "2 m / 70 cm / 23 cm and microwave all-mode with GPS-disciplined option. Check USB audio "
             "setup in its manual."),
-    Profile("Yaesu FT-991A", "transceiver", ["2m", "70cm"], True, "built-in", "hamlib", "FT-991",
+    Profile("Yaesu FT-991A", "transceiver", ["2m", "70cm"] + HF, True, "built-in", "hamlib", "FT-991",
             "HF / 6 m / 2 m / 70 cm all-mode with built-in USB sound card. No 1.25 m."),
-    Profile("Yaesu FT-818ND", "transceiver", ["2m", "70cm"], True, "external interface", "hamlib", "FT-818",
+    Profile("Yaesu FT-818ND", "transceiver", ["2m", "70cm"] + HF, True, "external interface", "hamlib", "FT-818",
             "Portable HF to 70 cm, 6 W. Needs a Digirig or similar for audio."),
-    Profile("Kenwood TS-2000", "transceiver", ["2m", "70cm"], True, "external interface", "hamlib", "TS-2000",
+    Profile("Kenwood TS-2000", "transceiver", ["2m", "70cm"] + HF, True, "external interface", "hamlib", "TS-2000",
             "HF / 6 m / 2 m / 70 cm all-mode (23 cm option). Needs an audio interface."),
     # ---- 1.25 m (220 MHz) capable, FM ----
     Profile("Kenwood TH-D75A (US)", "handheld", ["2m", "1.25m", "70cm"], False, "external interface", "audio-only", "",

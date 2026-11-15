@@ -114,8 +114,12 @@ class HamlibRadio:
         except RuntimeError:
             if want == rig_mode:
                 raise
-            log.warning("radio refused data mode %s; using %s. Set the radio to take its transmit audio "
-                        "from USB in plain %s (Icom menu: DATA OFF MOD = USB)", want, rig_mode, rig_mode)
+            if want not in getattr(self, "_warned", set()):
+                self._warned = getattr(self, "_warned", set()) | {want}
+                log.warning("This radio cannot be switched to %s through Hamlib, so Uranus uses plain %s. In plain "
+                            "%s the radio must take its transmit audio from USB: on Icom rigs set the menu item "
+                            "DATA OFF MOD to USB (voice from the microphone then needs it set back to MIC).",
+                            want, rig_mode, rig_mode)
             self._cmd(f"M {rig_mode} 0")
         time.sleep(0.3)
 
