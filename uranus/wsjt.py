@@ -72,8 +72,11 @@ FT4_COSTAS = ([0, 1, 3, 2], [1, 0, 2, 3], [2, 3, 1, 0], [3, 2, 0, 1])     # at s
 
 
 def ft4_tones(message):
-    tones = parse_tones(_run("ft4code", message), 103, 3)
-    for k, start in enumerate((0, 33, 66, 99)):
+    """105 channel symbols as ft4code prints them: ramp (R), 103 symbols with four Costas arrays, ramp (R)."""
+    tones = parse_tones(_run("ft4code", message), 105, 3)
+    if tones[0] != 0 or tones[-1] != 0:
+        raise ValueError("ft4code output: expected ramp symbols at both ends")
+    for k, start in enumerate((1, 34, 67, 100)):
         if tones[start:start + 4] != FT4_COSTAS[k]:
             raise ValueError("ft4code output failed Costas sync check")
     return tones
@@ -104,8 +107,13 @@ def ft8_audio(message, f0=1500.0):
 
 
 def ft4_audio(message, f0=1500.0):
-    """103 symbols x 48 ms, 20.833 Hz spacing, GFSK BT=1 (about 5 s)."""
-    return gfsk(ft4_tones(message), 576, FS / 576, f0, bt=1.0)
+    """105 symbols x 48 ms (5.04 s), 20.833 Hz spacing, GFSK BT=1; the first and last symbol ramp the power
+    up and down, as WSJT-X does."""
+    y = gfsk(ft4_tones(message), 576, FS / 576, f0, bt=1.0).astype(float)
+    ramp = 0.5 - 0.5 * np.cos(np.linspace(0, np.pi, 576))
+    y[:576] *= ramp
+    y[-576:] *= ramp[::-1]
+    return y.astype(np.float32)
 
 
 def wspr_audio(call, grid, dbm, f0=1500.0):
