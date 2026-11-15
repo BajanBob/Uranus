@@ -27,7 +27,8 @@ FS = 12000
 def record(seconds, device="default", fs=FS):
     try:
         import sounddevice as sd
-        dev = None if device in ("", "default") else (int(device) if str(device).isdigit() else device)
+        from .audiodev import resolve
+        dev = resolve(device, "in")
         x = sd.rec(int(seconds * fs), samplerate=fs, channels=1, dtype="float32", device=dev, blocking=True)
         return x[:, 0].astype(float)
     except ImportError:

@@ -112,10 +112,10 @@ def _pick_player(device):
     try:
         import sounddevice as sd             # optional; lets you pick the rig's sound card
 
-        dev = None if device in ("", "default") else (int(device) if str(device).isdigit() else device)
+        from .audiodev import resolve
 
         def play_sd(path, audio, fs, dur):
-            sd.play(audio, fs, device=dev, blocking=True)
+            sd.play(audio, fs, device=resolve(device, "out"), blocking=True)
         return play_sd
     except Exception:                        # noqa: BLE001
         pass

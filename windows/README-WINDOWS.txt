@@ -2,8 +2,10 @@ URANUS ON WINDOWS
 =================
 
 EASIEST: download Uranus-Windows-exe.zip, unzip it and double-click Uranus.exe.
-No Python needed. The buttons are numbered: 1. Edit settings, 2. Show plan,
-3. Dry run, then ON AIR. WhisperMite-Setup.exe is in the WhisperMite folder.
+No Python needed. On first start the Setup wizard asks for your callsign,
+grid, radio (e.g. Icom IC-9100), its USB Audio CODEC, CAT port, bands and
+PSK Reporter. Then press Show plan, Dry run, and ON AIR. Hover over any
+control for help. WhisperMite-Setup.exe is in the WhisperMite folder.
 
 FROM SOURCE (needs Python):
 

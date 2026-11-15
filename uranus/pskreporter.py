@@ -90,9 +90,16 @@ class Reporter:
         self.rx_call, self.rx_grid = rx_call, rx_grid
         self.addr = (HOST, PORT_TEST if test else PORT_LIVE)
         self.interval_s = interval_s
+        self.test = test
         self.domain = random.getrandbits(32)
         self.seq = 0
         self.pending = []
+        # live status for the window: totals, last upload, next upload, last error
+        self.added_total = 0
+        self.sent_total = 0
+        self.last_sent = None
+        self.last_error = ""
+        self.next_due = time.time() + 60
         self.lock = threading.Lock()
         self.stop = threading.Event()
         threading.Thread(target=self._loop, daemon=True).start()
@@ -102,6 +109,7 @@ class Reporter:
             key = (spot["call"], spot["mode"], int(spot["time"]) // 60)
             if all((p["call"], p["mode"], int(p["time"]) // 60) != key for p in self.pending):
                 self.pending.append(spot)
+                self.added_total += 1
 
     def flush(self):
         with self.lock:
@@ -113,8 +121,11 @@ class Reporter:
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
                 s.sendto(pkt, self.addr)
             self.seq += len(batch)
+            self.sent_total += len(batch)
+            self.last_sent, self.last_error = time.time(), ""
             log.info("PSK Reporter: sent %d spot(s) to %s:%d", len(batch), *self.addr)
         except OSError as e:
+            self.last_error = str(e)
             log.warning("PSK Reporter upload failed (%s); will retry", e)
             with self.lock:
                 self.pending = batch + self.pending
@@ -122,10 +133,22 @@ class Reporter:
         return len(batch)
 
     def _loop(self):
-        self.stop.wait(random.uniform(30, 90))
+        first = random.uniform(30, 90)
+        self.next_due = time.time() + first
+        self.stop.wait(first)
         while not self.stop.is_set():
             self.flush()
-            self.stop.wait(self.interval_s + random.uniform(0, 30))
+            wait = self.interval_s + random.uniform(0, 30)
+            self.next_due = time.time() + wait
+            self.stop.wait(wait)
+
+    def status(self):
+        """Snapshot for the live panel."""
+        with self.lock:
+            queued = len(self.pending)
+        return {"server": "test" if self.test else "live", "queued": queued, "added": self.added_total,
+                "sent": self.sent_total, "last_sent": self.last_sent, "last_error": self.last_error,
+                "next_in_s": max(0, int(self.next_due - time.time()))}
 
 
 def heard_by(callsign, seconds=3600, contact=None, timeout=20):

@@ -32,6 +32,20 @@ WSPR, UR, Pumpkin). Specifications vary by model year and regional version, so
 always check the radio's manual. To add a radio, add a `Profile` to
 `uranus/radios.py`.
 
+## Radio USB codecs (Icom IC-9100 and others)
+
+Rigs with a built-in sound card (IC-9100, IC-9700, IC-7300, IC-705, FT-991A)
+appear in Windows as **USB Audio CODEC**: "Speakers (USB Audio CODEC)" for
+transmit audio and "Microphone (USB Audio CODEC)" for receive audio. The audio
+dropdowns list these first, marked with a star, and choosing such a radio in
+the Setup wizard selects them automatically. Uranus saves the device name, not
+its number, so it still finds the codec after Windows renumbers sound devices.
+
+IC-9100 menu settings: CI-V USB Baud Rate 19200, CI-V Address 7C, CI-V USB
+Echo Back OFF, DATA MOD USB. Use USB-D for FT8, WSPR, UR and Pumpkin, and FM-D
+for APRS and Cucumber. Install Icom's USB driver first; the CAT port shows as
+"Silicon Labs CP210x USB to UART Bridge".
+
 ## 1.25 m (220 MHz)
 
 * **Allocation:** ITU Region 2 only. Barbados allocates 222-225 MHz; confirm

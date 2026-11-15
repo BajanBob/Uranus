@@ -225,6 +225,38 @@ class TestBandsRadiosSDR(unittest.TestCase):
             self.assertIn(p.backend, ("hamlib", "hackrf", "rtl_fm", "audio-only"))
             self.assertTrue(p.help())
 
+    def test_usb_codec_dropdown_and_lookup(self):
+        from uranus import audiodev as a
+        devs = [{"index": 1, "name": "Speakers (Realtek Audio)", "hostapi": "MME", "inputs": 0, "outputs": 2},
+                {"index": 7, "name": "Speakers (USB Audio CODEC )", "hostapi": "Windows WASAPI", "inputs": 0,
+                 "outputs": 2},
+                {"index": 2, "name": "Speakers (USB Audio CODEC )", "hostapi": "MME", "inputs": 0, "outputs": 2},
+                {"index": 3, "name": "Microphone (USB Audio CODEC )", "hostapi": "MME", "inputs": 2, "outputs": 0}]
+        out = a.choices("out", devs)
+        self.assertTrue(out[0].startswith("Speakers (USB Audio CODEC") and a.CODEC_TAG in out[0])
+        self.assertEqual(len([c for c in out if "CODEC" in c]), 1)           # listed once
+        spec = a.spec_from_label(out[0])
+        self.assertEqual(a.resolve(spec, "out", devs), 2)                     # MME preferred
+        self.assertEqual(a.resolve("USB Audio CODEC", "in", devs), 3)
+        self.assertEqual(a.resolve("4", "out", devs), 4)
+        self.assertIsNone(a.resolve("default", "out", devs))
+        none = a.choices("out", [])
+        self.assertEqual(a.spec_from_label(none[0]), "USB Audio CODEC")      # offered before plug-in
+        with self.assertRaises(RuntimeError):
+            a.resolve("USB Audio CODEC", "out", devs[:1])
+        self.assertIn("Icom IC-9100", [p.name for p in __import__("uranus.radios").radios.PROFILES])
+
+    def test_pskreporter_live_status(self):
+        from uranus import pskreporter
+        r = pskreporter.Reporter("8P5AB", "GK03", test=True)
+        r.stop.set()
+        r.add({"call": "K4XYZ", "grid": "EM73", "snr": -21, "freq_hz": 144491500, "mode": "PUMPKIN",
+               "time": 1_700_000_000})
+        r.add({"call": "K4XYZ", "grid": "EM73", "snr": -20, "freq_hz": 144491500, "mode": "PUMPKIN",
+               "time": 1_700_000_010})                                        # same minute: once
+        s = r.status()
+        self.assertEqual((s["server"], s["queued"], s["added"], s["sent"]), ("test", 1, 1, 0))
+
     def test_hackrf_iq_is_upper_sideband(self):
         from uranus import sdr
         fs = 12000

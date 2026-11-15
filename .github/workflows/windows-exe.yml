@@ -20,16 +20,19 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: python -m pip install --upgrade pip numpy scipy sounddevice pyserial pyinstaller
+        run: python -m pip install --upgrade pip numpy scipy sounddevice pyserial pyinstaller pillow
 
       - name: Run tests
         run: python -m unittest -v tests.test_uranus
 
-      - name: GUI smoke test (main window and Station setup)
-        run: >
-          python -c "import uranus.gui as g; a=g.App(); a.update(); w=g.SetupWindow(a); a.update();
-          w.v['band_1.25m'].set(True); w.save(); a.update(); c=g.ChatWindow(a); a.update();
-          c.v_text.set('test'); c.estimate(); c.close(); a.update(); a.destroy(); print('GUI OK')"
+      - name: GUI smoke test (faceplate, wizard, PSK panel, setup, chat)
+        run: python tools/ci/gui_smoke.py
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots
+          path: screenshots/
 
       - name: Restore config after smoke test
         run: git checkout -- config/uranus.toml
@@ -98,7 +101,7 @@ jobs:
             Windows: Uranus-Windows-exe.zip - unzip and double-click Uranus.exe (no Python needed).
             Raspberry Pi: Uranus-RaspberryPi.zip - unzip and run  bash linux/install-pi.sh
             Linux: Uranus-Linux.zip - unzip and run  bash linux/install-linux.sh
-            New: listen mode, station map (blue online / red offline), PSK Reporter upload.
+            New in this version: modern faceplate, setup wizard, Icom IC-9100 USB Audio CODEC in the audio lists, live PSK Reporter panel.
             Free software under GPL-3.0. Testers wanted worldwide: report results under Issues.
           files: |
             Uranus-Windows-exe.zip
