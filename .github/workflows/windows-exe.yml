@@ -57,7 +57,8 @@ jobs:
           if (-not ($caps | Select-String "PKTUSB")) { Write-Host "::warning::IC-9100 in this Hamlib has no PKTUSB" }
 
       - name: GUI smoke test (faceplate, wizard, PSK panel, setup, chat)
-        run: python tools/ci/gui_smoke.py
+        timeout-minutes: 6
+        run: python -u tools/ci/gui_smoke.py
 
       - uses: actions/upload-artifact@v4
         if: always()

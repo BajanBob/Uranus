@@ -569,7 +569,7 @@ class App(tk.Tk):
     def _dial_options(self, sub):
         from . import freqplan
         mode = MODE_OF[sub.split("-")[0]]
-        return [f"{o.mhz:.4f}".rstrip("0") + f"   {freqplan.BAND_NAMES[o.band]} · {o.status} · {o.note}"
+        return [f"{freqplan.fmt(o.mhz)}   {freqplan.BAND_NAMES[o.band]} · {o.status} · {o.note}"
                 for b in freqplan.BAND_EDGES for o in freqplan.options(b, mode)]
 
     def save_listen(self, mode_changed=False):
@@ -1003,7 +1003,8 @@ class App(tk.Tk):
             if sub.startswith("URC-"):
                 sub = "PUMPKIN-" + sub.split("-")[1]
             self.v_sub.set(sub)
-            self.v_dial.set(f"{float(rx.get('dial_mhz', 144.490)):.3f}")
+            from .freqplan import fmt
+            self.v_dial.set(fmt(float(rx.get("dial_mhz", 144.490))))
         if getattr(self, "wf_mon", None) and rx.get("audio_device", "default") != getattr(self, "wf_dev", None):
             self.start_waterfall()
 
@@ -1677,7 +1678,7 @@ class BandsModesWindow(tk.Toplevel):
                 Tooltip(c, MODE_HELP.get(mode, mode))
                 opts = [o.label() for o in freqplan.options(bn, mode, self.region)]
                 cur = freqplan.find(bn, mode, sl["freq_mhz"])
-                fv = tk.StringVar(value=cur.label() if cur else f"{sl['freq_mhz']:.4f}".rstrip("0"))
+                fv = tk.StringVar(value=cur.label() if cur else freqplan.fmt(sl["freq_mhz"]))
                 self.v_freq[(bn, i)] = (fv, mode)
                 combo = ttk.Combobox(tab, textvariable=fv, values=opts, width=66)
                 combo.grid(row=r, column=1, sticky="w", padx=8, pady=2)

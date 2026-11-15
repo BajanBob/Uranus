@@ -78,7 +78,13 @@ class Freq:
 
     def label(self):
         reg = "" if self.region == "All" else f" · {self.region}"
-        return f"{self.mhz:.3f}  {self.status}{reg} · {self.note}"
+        return f"{fmt(self.mhz)}  {self.status}{reg} · {self.note}"
+
+
+def fmt(mhz):
+    """MHz with every significant digit: 144.390, 10.1476, 1.8366 (never rounded to 3 decimals)."""
+    s = f"{mhz:.4f}"
+    return s[:-1] if s.endswith("0") else s
 
 
 PLAN = [

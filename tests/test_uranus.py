@@ -1,5 +1,6 @@
 import os
 import sys
+import tomllib
 import unittest
 
 import numpy as np
@@ -317,6 +318,14 @@ class TestBandsRadiosSDR(unittest.TestCase):
             if band not in ("60m", "1.25m"):
                 self.assertTrue(fp.options(band, "wspr") or band == "60m", band)
         self.assertIn("outside", fp.check("2m", "aprs", 148.0))
+        cfg = tomllib.load(open("config/uranus.toml", "rb"))
+        for band in cfg["band"]:                          # every default slot can be saved from its dropdown
+            for sl in band["slot"]:
+                cur = fp.find(band["name"], sl["mode"], sl["freq_mhz"])
+                mhz = float((cur.label() if cur else fp.fmt(sl["freq_mhz"])).split()[0])
+                self.assertNotIn("outside", fp.check(band["name"], sl["mode"], mhz), (band["name"], sl))
+        for f in fp.PLAN:                                 # labels keep every digit, so saving round-trips
+            self.assertAlmostEqual(float(f.label().split()[0]), f.mhz, places=6, msg=f.label())
         self.assertIn("Region 2 only", fp.check("1.25m", "pumpkin", 222.13, "R1"))
         wspr = fp.find("2m", "wspr", 144.489)
         pk = fp.find("2m", "pumpkin", 144.490)

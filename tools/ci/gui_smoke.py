@@ -4,6 +4,22 @@ import sys
 import time
 
 sys.path.insert(0, os.getcwd())
+import tkinter.messagebox as _mb             # noqa: E402
+
+DIALOGS = []
+
+
+def _no_modal(name):                        # a dialog in CI would wait forever: log it and answer "yes/OK"
+    def f(title="", message="", **kw):
+        DIALOGS.append((name, title, message))
+        print(f"DIALOG {name}: {title}: {message}", flush=True)
+        return True
+    return f
+
+
+for _n in ("showinfo", "showwarning", "showerror", "askyesno", "askyesnocancel", "askokcancel"):
+    setattr(_mb, _n, _no_modal(_n))
+
 import uranus.gui as g                      # noqa: E402
 
 shots = os.path.join(os.getcwd(), "screenshots")
@@ -134,3 +150,5 @@ c.close()
 a.update()
 a.destroy()
 print("GUI OK")
+errors = [d for d in DIALOGS if d[0] == "showerror"]
+assert not errors, errors
