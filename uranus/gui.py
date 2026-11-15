@@ -1213,10 +1213,13 @@ class SetupWindow(tk.Toplevel):
             self.destroy()
             return
         rc, rx, sd = self.cfg.get("radio", {}), self.cfg.get("receive", {}), self.cfg.get("sdr", {})
-        f = ttk.Frame(self, padding=18)
-        f.pack(fill="both")
+        self.maxsize(self.winfo_screenwidth(), self.winfo_screenheight() - 60)
+        bb = tk.Frame(self, bg=C["panel"], padx=18, pady=10)      # buttons pinned to the bottom, always visible
+        bb.pack(side="bottom", fill="x")
+        f = ttk.Frame(self, padding=(18, 14, 18, 6))
+        f.pack(fill="both", expand=True)
         ttk.Label(f, text="Station setup", style="Big.TLabel").grid(row=0, column=0, columnspan=3, sticky="w",
-                                                                    pady=(0, 10))
+                                                                    pady=(0, 8))
         self.v = {}
         row = [1]
 
@@ -1240,9 +1243,11 @@ class SetupWindow(tk.Toplevel):
         cb = ttk.Combobox(f, textvariable=self.v["profile"], values=names, state="readonly", width=50)
         add("Radio / SDR", cb, lambda: radios.BY_NAME[self.v["profile"].get()].help())
         cb.bind("<<ComboboxSelected>>", lambda e: self.on_profile())
-        self.info = tk.Label(f, text="", justify="left", wraplength=520, anchor="w", fg=C["muted"], bg=C["bg"],
+        self.info = tk.Label(f, text="", justify="left", wraplength=560, anchor="w", fg=C["muted"], bg=C["bg"],
                              font=(UI, 9))
-        self.info.grid(row=row[0], column=0, columnspan=3, sticky="we", padx=8, pady=(0, 8))
+        self.info.grid(row=row[0], column=0, columnspan=3, sticky="we", padx=8, pady=(0, 6))
+        Tooltip(self.info, lambda: radios.BY_NAME[self.v["profile"].get()].help() + "\n\n"
+                + ic9100_note(self.v["profile"].get()))
         row[0] += 1
 
         self.v["backend"] = tk.StringVar(value=rc.get("backend", "dry-run"))
@@ -1308,8 +1313,6 @@ class SetupWindow(tk.Toplevel):
         add("HackRF TX gain (dB)", ttk.Spinbox(f, from_=0, to=47, textvariable=self.v["txvga"], width=8),
             "0-47 dB. Start low and measure your output after the band-pass filter.")
 
-        bb = ttk.Frame(f)
-        bb.grid(row=row[0], column=0, columnspan=3, sticky="e", pady=(14, 0))
         for text, cmd, style, tip in [
                 ("Refresh devices", self.refresh, None, "Look again for COM ports and sound devices, e.g. after "
                                                         "switching the radio on or plugging in its USB cable."),
@@ -1320,10 +1323,10 @@ class SetupWindow(tk.Toplevel):
                 ("Close", self.close, None, "Close this window. If you changed something, Uranus asks whether "
                                             "to save it.")]:
             b = ttk.Button(bb, text=text, command=cmd, style=f"{style}.TButton" if style else "TButton")
-            b.pack(side="left", padx=4)
+            b.pack(side="left", padx=(0, 8))
             Tooltip(b, tip)
-        self.saved_lbl = tk.Label(f, text="", bg=C["bg"], fg=C["green"], font=(UI, 10, "bold"))
-        self.saved_lbl.grid(row=row[0] + 1, column=0, columnspan=3, sticky="e", pady=(6, 0))
+        self.saved_lbl = tk.Label(bb, text="", bg=C["panel"], fg=C["green"], font=(UI, 10, "bold"))
+        self.saved_lbl.pack(side="left", padx=8)
         self.on_profile(initial=True)
         self.snapshot = self._values()
         self.protocol("WM_DELETE_WINDOW", self.close)
@@ -1351,8 +1354,9 @@ class SetupWindow(tk.Toplevel):
 
     def on_profile(self, initial=False):
         p = self.radios.BY_NAME[self.v["profile"].get()]
-        self.info.config(text=(p.help().split("\n", 1)[1] + ("\n\n" + ic9100_note(p.name) if ic9100_note(p.name)
-                                                              else "")))
+        lines = p.help().split("\n")
+        self.info.config(text=f"{lines[1]}  ·  {lines[3] if len(lines) > 3 else ''}\n{lines[2]}  "
+                              "(hover here for setup details)")
         if not initial:
             self.v["backend"].set({"hamlib": "hamlib", "hackrf": "hackrf"}.get(p.backend, self.v["backend"].get()))
             if p.backend == "rtl_fm":
