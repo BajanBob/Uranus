@@ -24,6 +24,7 @@ wspr_power_dbm = 37          # REAL power you send, in dBm (37 = 5 W)
 audio_offset_hz = 1500
 
 [receive]                    # listen mode
+listen_between_tx = true     # ON AIR: decode on each frequency in the gaps between transmissions
 mode = "pumpkin"             # "pumpkin" (SSB), "cucumber" (FM) or "ur"
 submode = "PUMPKIN-60"
 dial_mhz = 144.490

@@ -146,6 +146,12 @@ class Runner:
         self.cfg, self.slots, self.radio = cfg, slots, radio
         self.st = cfg["station"]
         self.stop = threading.Event()        # set() to stop between transmissions
+        # Listening in the gaps between transmissions (set by the GUI / CLI):
+        self.listen_in_gaps = False
+        self.on_event = None                 # decoder events for the window
+        self.reporter = None                 # PSK Reporter uploader
+        self.decoding = False
+        self._gap_warned = set()
 
     def audio_for(self, s):
         st = self.st
@@ -184,7 +190,7 @@ class Runner:
                         log.info("stopped")
                         return
                     self._one(s, rigmodes, cs)
-                    self._sleep_until(time.time() + gap_after(self.cfg, band_slots, i))
+                    self._gap(s, time.time() + gap_after(self.cfg, band_slots, i))
             done += 1
 
     def _one(self, s, rigmodes, cs):
@@ -207,6 +213,32 @@ class Runner:
         log.info("TX %s at %s UTC", s.label,
                  dt.datetime.now(dt.timezone.utc).strftime("%H:%M:%S.%f")[:-3])
         self.radio.transmit(s.rig_hz, rigmodes[s.mode], audio, fs, s.label)
+
+    def _gap(self, s, until):
+        """Wait until `until`. If enabled, decode on the slot just sent (same frequency and mode) meanwhile,
+        like WSJT-X listening between its own transmissions."""
+        if self.listen_in_gaps and not self.stop.is_set() and type(self.radio).__name__ != "DryRunRadio":
+            import copy
+            from . import monitor
+            cfg = copy.deepcopy(self.cfg)
+            sub = s.submode if s.mode in ("pumpkin", "cucumber", "ur") else s.mode.upper()
+            cfg["receive"] = {**cfg.get("receive", {}), "mode": s.mode, "submode": sub,
+                              "dial_mhz": s.freq_mhz, "source": "audio"}
+            try:
+                lis = monitor.Listener(cfg, self.reporter, on_event=self.on_event)
+                lis.stop = self.stop
+                self.decoding = True
+                log.info("listening on %.4f MHz (%s) until the next transmission", s.freq_mhz, sub)
+                lis.run(until=until - 4)              # 4 s to retune for the next transmission
+            except Exception as e:                    # noqa: BLE001 - e.g. WSJT-X missing for FT8/WSPR
+                if s.mode not in self._gap_warned:
+                    self._gap_warned.add(s.mode)
+                    log.warning("not decoding %s between transmissions: %s", s.mode.upper(), e)
+            finally:
+                self.decoding = False
+                if self.on_event:
+                    self.on_event({"type": "gap_end"})
+        self._sleep_until(until)
 
     def _clear(self, cs):
         for _ in range(int(cs.get("retries", 3)) + 1):

@@ -564,7 +564,9 @@ class App(tk.Tk):
             while True:
                 e = self.evq.get_nowait()
                 t = e["type"]
-                if t in ("waiting", "recording", "decoding", "result"):
+                if t == "gap_end":
+                    self.dec = {"type": "idle"}
+                elif t in ("waiting", "recording", "decoding", "result"):
                     self.dec = e
                     if t == "result":
                         self.dec_last.config(
@@ -599,7 +601,14 @@ class App(tk.Tk):
         dial = e.get("dial_hz", 0) / 1e6 if e.get("dial_hz") else None
         where = f"{sub} on {dial:.4f} MHz" if dial else sub
         t = e["type"]
-        if t == "idle" or self.runner is None or not hasattr(self.runner, "submode"):
+        beacon_listening = getattr(self.runner, "decoding", False)
+        if self.runner is not None and hasattr(self.runner, "decoding") and not beacon_listening:
+            self.dec_head.config(text="Beacon transmitting", fg=C["red"])
+            self.dec_line.config(text="Between transmissions Uranus listens and decodes on the same frequency "
+                                      "and mode (APRS, FT8, WSPR, Pumpkin...).")
+            self.dec_bar.coords(self.dec_fill, 0, 0, 0, 10)
+            return
+        if t == "idle" or self.runner is None or not (hasattr(self.runner, "submode") or beacon_listening):
             self.dec_head.config(text="Decoder off", fg=C["muted"])
             self.dec_line.config(text="Choose what to decode, then press Listen + decode. Each slot is recorded, "
                                       "then decoded; results appear here and scroll along the bottom.")
@@ -1040,7 +1049,11 @@ class App(tk.Tk):
             print(rigctl.ensure(cfg))
             radio = HamlibRadio(rc["rigctld_host"], rc["rigctld_port"],
                                 rc.get("audio_device", "default"), max_tx_s=rc.get("max_tx_s", 320, data_mode=rc.get("data_mode", True)))
-        return scheduler.Runner(cfg, slots, radio)
+        runner = scheduler.Runner(cfg, slots, radio)
+        runner.listen_in_gaps = bool(cfg.get("receive", {}).get("listen_between_tx", True))
+        runner.on_event = self.on_listen_event
+        runner.reporter = self.reporter
+        return runner
 
     def dry_run(self):
         def go():
@@ -1056,10 +1069,14 @@ class App(tk.Tk):
                 "PC clock accurate, and every enabled frequency permitted by your licence."):
             return
 
+        if self.v_psk.get() and not self.reporter:
+            self.reporter = self._make_reporter()
+
         def go():
             self.runner = self._runner(False)
             self.runner.run()
-        self.print("\n> ON AIR\n")
+        self.print("\n> ON AIR: transmitting on schedule and decoding on each frequency between "
+                   "transmissions\n")
         self.start(go, "Transmitting on schedule. Press Stop to end.", "air")
 
     def listen(self):

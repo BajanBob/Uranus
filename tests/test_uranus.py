@@ -382,6 +382,32 @@ class TestBandsRadiosSDR(unittest.TestCase):
             pkt = aprs_rx.parse_frame(aprs_rx.decode_audio(resample_poly(a, 1, 4), 12000)[0])
             self.assertEqual(pkt["path"], path)
 
+    def test_beacon_decodes_aprs_between_transmissions(self):
+        import tempfile
+        import time as _t
+        from uranus import aprs, monitor
+        t = open("config/uranus.toml", encoding="utf-8").read().replace('callsign = "N0CALL"', 'callsign = "8P5AB"', 1)
+        with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False, encoding="utf-8") as f:
+            f.write(t)
+        cfg, slots = scheduler.load_config(f.name)
+
+        class Rig:                                   # any real-radio class (not DryRunRadio)
+            pass
+        r = scheduler.Runner(cfg, slots, Rig())
+        events = []
+        r.listen_in_gaps, r.on_event = True, events.append
+        pkt = aprs.packet_audio("W1ABC-9", aprs.position_info(42.36, -71.06), fs=12000)
+        orig = monitor.record
+        monitor.record = lambda sec, device="default", fs=12000: np.concatenate(
+            [np.zeros(6000), pkt, np.zeros(max(0, int(sec * fs) - 6000 - len(pkt)))])[:int(sec * fs)]
+        try:
+            r._gap(scheduler.Slot("2m", "aprs", 144.390), _t.time() + 9)
+        finally:
+            monitor.record = orig
+        calls = [e["spot"]["call"] for e in events if e["type"] == "decode"]
+        self.assertEqual(calls, ["W1ABC-9"])
+        self.assertEqual(events[-1]["type"], "gap_end")
+
     def test_pskreporter_live_status(self):
         from uranus import pskreporter
         r = pskreporter.Reporter("8P5AB", "GK03", test=True)

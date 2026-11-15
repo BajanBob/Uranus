@@ -49,6 +49,13 @@ jobs:
           assert rigctl.model_list().get('IC-9100') == 3068, rigctl.model_list().get('IC-9100');
           assert not bad, bad; print('Hamlib models OK')"
 
+      - name: IC-9100 data modes in the bundled Hamlib (USB-D / FM-D)
+        shell: pwsh
+        run: |
+          $caps = ./hamlib/rigctl.exe -m 3068 --dump-caps
+          $caps | Select-String "Mode list|Has set Mode|Can set Mode"
+          if (-not ($caps | Select-String "PKTUSB")) { Write-Host "::warning::IC-9100 in this Hamlib has no PKTUSB" }
+
       - name: GUI smoke test (faceplate, wizard, PSK panel, setup, chat)
         run: python tools/ci/gui_smoke.py
 
@@ -130,7 +137,7 @@ jobs:
             Windows: Uranus-Windows-exe.zip - unzip and double-click Uranus.exe (no Python needed).
             Raspberry Pi: Uranus-RaspberryPi.zip - unzip and run  bash linux/install-pi.sh
             Linux: Uranus-Linux.zip - unzip and run  bash linux/install-linux.sh
-            New in this version: worldwide APRS frequency list including 145.825 (ISS, path ARISS); transmit in data mode (USB-D / FM-D); Test transmit; map opens in your browser; FT8, WSPR and APRS decoding.
+            New in this version: ON AIR now decodes between its own transmissions (APRS, FT8, WSPR, Pumpkin, Cucumber, UR on the same frequency); radio stays in data mode (USB-D / FM-D); worldwide APRS list incl. 145.825 (ISS).
             Free software under GPL-3.0. Testers wanted worldwide: report results under Issues.
           files: |
             Uranus-Windows-exe.zip
