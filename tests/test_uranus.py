@@ -315,6 +315,36 @@ class TestBandsRadiosSDR(unittest.TestCase):
         pk = fp.find("2m", "pumpkin", 144.490)
         self.assertGreater((pk.mhz + 0.0015) - (wspr.mhz + 0.0016), 0.0005)   # Pumpkin tones clear of WSPR
 
+    def test_aprs_receiver_decodes_noisy_deemphasised_packet(self):
+        from scipy.signal import lfilter
+        from uranus import aprs, aprs_rx
+        fs, rng = 12000, np.random.default_rng(7)
+        y = aprs.packet_audio("8P5AB-11", aprs.position_info(13.1, -59.6, comment="test"), fs=fs)
+        k = np.exp(-2 * np.pi * 300 / fs)
+        y = lfilter([1 - k], [1, -k], y)                    # FM receiver de-emphasis
+        y = y / np.std(y)
+        x = np.concatenate([rng.normal(0, 1, 8000), y + rng.normal(0, 10 ** (-10 / 20), len(y)), rng.normal(0, 1, 8000)])
+        frames = aprs_rx.decode_audio(0.2 * x, fs)
+        self.assertEqual(len(frames), 1)
+        pkt = aprs_rx.parse_frame(frames[0])
+        self.assertEqual(pkt["source"], "8P5AB-11")
+        lat, lon = aprs_rx.position(pkt)
+        self.assertAlmostEqual(lat, 13.1, places=2)
+        self.assertAlmostEqual(lon, -59.6, places=2)
+        self.assertEqual(aprs_rx.decode_audio(rng.normal(0, 1, 120000), fs), [])   # noise alone: nothing
+        lat, lon = aprs_rx._compressed_pos("/5L!!<*e7>7P[")                  # APRS spec example
+        self.assertAlmostEqual(lat, 49.5, places=3)
+        self.assertAlmostEqual(lon, -72.75, places=3)
+
+    def test_ft8_message_parsing(self):
+        p = wsjt.parse_ft8_message
+        self.assertEqual(p("CQ K1ABC FN42"), ("K1ABC", "FN42"))
+        self.assertEqual(p("CQ DX 8P5AB GK03"), ("8P5AB", "GK03"))
+        self.assertEqual(p("K1ABC W9XYZ EN37"), ("W9XYZ", "EN37"))
+        self.assertEqual(p("K1ABC W9XYZ RR73"), ("W9XYZ", ""))
+        m = wsjt._FT8_LINE.match("000000 -12  0.2 1234 ~  CQ K1ABC FN42")
+        self.assertEqual(m.group(5), "CQ K1ABC FN42")
+
     def test_pskreporter_live_status(self):
         from uranus import pskreporter
         r = pskreporter.Reporter("8P5AB", "GK03", test=True)

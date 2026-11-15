@@ -130,7 +130,7 @@ jobs:
             Windows: Uranus-Windows-exe.zip - unzip and double-click Uranus.exe (no Python needed).
             Raspberry Pi: Uranus-RaspberryPi.zip - unzip and run  bash linux/install-pi.sh
             Linux: Uranus-Linux.zip - unzip and run  bash linux/install-linux.sh
-            New in this version: settings are kept in your Windows profile (%APPDATA%\\Uranus) and carried over from older Uranus folders; Station setup has callsign and grid and asks before discarding changes; the wizard saves page by page; band-plan frequency lists; waterfall; HEARD ticker.
+            New in this version: FT8 and WSPR decoding with WSJT-X's own decoders, and a built-in APRS decoder, alongside Pumpkin, Cucumber and UR. Settings kept in %APPDATA%\Uranus.
             Free software under GPL-3.0. Testers wanted worldwide: report results under Issues.
           files: |
             Uranus-Windows-exe.zip

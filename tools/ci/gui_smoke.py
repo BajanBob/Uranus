@@ -103,6 +103,13 @@ cfg = g.load_cfg()
 b2 = [b for b in cfg["band"] if b["name"] == "2m"][0]["slot"]
 assert b2[7]["enabled"] is True and b2[4]["enabled"] is False
 assert abs(b2[7]["freq_mhz"] - 144.285) < 1e-6 and abs(b2[5]["freq_mhz"] - 144.489) < 1e-6, b2
+a.v_sub.set("FT8")
+a.save_listen(mode_changed=True)
+rx = g.load_cfg()["receive"]
+assert rx["mode"] == "ft8" and abs(rx["dial_mhz"] - 144.174) < 1e-6, rx
+a.evq.put({"type": "message", "mode": "FT8", "snr": -12, "text": "K1ABC W9XYZ -12", "call": "W9XYZ",
+           "freq_hz": 144175500, "start": now})
+a.handle_events_extra()
 a.v_sub.set("CUCUMBER-15")
 a.save_listen(mode_changed=True)
 assert g.load_cfg()["receive"]["mode"] == "cucumber"

@@ -67,8 +67,11 @@ class Listener:
         st, rx = cfg["station"], cfg.get("receive", {})
         self.call, self.grid = st["callsign"], st["grid"]
         self.mode = {"urc": "pumpkin"}.get(rx.get("mode", "pumpkin"), rx.get("mode", "pumpkin"))
-        default = {"pumpkin": "PUMPKIN-60", "cucumber": "CUCUMBER-60"}.get(self.mode, "UR-60")
+        default = {"pumpkin": "PUMPKIN-60", "cucumber": "CUCUMBER-60", "ft8": "FT8", "wspr": "WSPR",
+                   "aprs": "APRS"}.get(self.mode, "UR-60")
         self.submode = rx.get("submode", default)
+        if self.mode in ("ft8", "wspr", "aprs"):
+            self.submode = self.mode.upper()
         if self.submode.startswith("URC-"):
             self.submode = "PUMPKIN-" + self.submode.split("-")[1]
         if self.mode == "cucumber" and not self.submode.startswith("CUCUMBER-"):
@@ -82,7 +85,19 @@ class Listener:
         self.spot_path = spot_path
         self.on_event = on_event or (lambda e: None)
         self.stop = threading.Event()
-        if self.mode == "pumpkin":
+        self.aprs_tail = np.zeros(0)
+        self.aprs_seen = {}
+        if self.mode == "ft8":
+            from . import wsjt
+            wsjt.decoder_path("jt9")                    # fail early with a clear message
+            self.T, self.period, self.frame_s = 0.16, 15, 13.8 - 4.5   # records 13.8 s from the slot start
+        elif self.mode == "wspr":
+            from . import wsjt
+            wsjt.decoder_path("wsprd")
+            self.T, self.period, self.frame_s = 0.683, 120, 114.0 - 4.5
+        elif self.mode == "aprs":
+            self.T, self.period, self.frame_s = 1 / 1200, 10, 10.0 - 4.5   # continuous, 10-second blocks
+        elif self.mode == "pumpkin":
             self.T, self.period = pumpkin.SUBMODES[self.submode], pumpkin.PERIODS[self.submode]
             self.frame_s = pumpkin.NSYM * self.T
         elif self.mode == "cucumber":
@@ -93,6 +108,31 @@ class Listener:
             self.frame_s = urmode.NSYM * self.T
 
     def decode(self, x):
+        if self.mode in ("ft8", "wspr"):
+            from . import wsjt
+            fn = wsjt.ft8_decode if self.mode == "ft8" else wsjt.wspr_decode
+            res = fn(x, self.dial_hz)
+            for r in res:
+                r["kind"] = "station" if r["call"] and r["grid"] else "message"
+            return self.mode.upper(), res
+        if self.mode == "aprs":
+            from . import aprs_rx, geo
+            block = np.concatenate([self.aprs_tail, x])
+            self.aprs_tail = x[-int(1.5 * FS):]           # keep 1.5 s so packets across blocks are caught
+            now, res = time.time(), []
+            for fr in aprs_rx.decode_audio(block, FS):
+                if now - self.aprs_seen.get(fr, 0) < 30:
+                    continue
+                self.aprs_seen[fr] = now
+                pkt = aprs_rx.parse_frame(fr)
+                if not pkt:
+                    continue
+                pos = aprs_rx.position(pkt)
+                grid = geo.latlon_to_grid(*pos) if pos else ""
+                res.append({"call": pkt["source"], "grid": grid, "snr": 0.0, "freq_hz": int(self.dial_hz),
+                            "message": f"{pkt['source']}>{pkt['dest']}: {pkt['info'][:60]}",
+                            "kind": "station" if grid else "message", "lat_lon": pos})
+            return "APRS", res
         if self.mode == "pumpkin":
             res = pumpkin.decode_audio(x, self.submode, f_nom=self.f0, df_max=0.1 / self.T)
             mode = "PUMPKIN"
@@ -120,10 +160,14 @@ class Listener:
                  self.submode, self.dial_hz / 1e6, self.f0, self.period)
         n = 0
         while not self.stop.is_set() and (slots is None or n < slots):
-            start = math.ceil(time.time() / self.period) * self.period
-            self.on_event({"type": "waiting", "start": start, **self._info()})
-            while not self.stop.is_set() and time.time() < start - 0.3:
-                self.stop.wait(min(0.5, start - 0.3 - time.time()))
+            if self.mode == "aprs":
+                start = time.time()                       # APRS packets come at any time: listen continuously
+            else:
+                start = math.ceil(time.time() / self.period) * self.period
+                self.on_event({"type": "waiting", "start": start, **self._info()})
+            lead = 0.0 if self.mode in ("ft8", "wspr", "aprs") else 0.3   # WSJT-X decoders expect slot-aligned audio
+            while not self.stop.is_set() and time.time() < start - lead:
+                self.stop.wait(min(0.5, max(0.01, start - lead - time.time())))
             if self.stop.is_set():
                 break
             self.on_event({"type": "recording", "start": start, "end": start + self.frame_s + 4.5, **self._info()})
@@ -133,8 +177,17 @@ class Listener:
                 x = record(self.frame_s + 4.5, self.device)
             self.on_event({"type": "decoding", "start": start, **self._info()})
             level_db = float(20 * np.log10(np.sqrt(np.mean(np.square(x))) + 1e-9)) if len(x) else -120.0
-            mode, res = self.decode(x)
+            try:
+                mode, res = self.decode(x)
+            except Exception as e:                         # noqa: BLE001 - keep listening
+                log.warning("decoder error: %s", e)
+                mode, res = self.mode.upper(), []
             for r in res:
+                if r.get("kind") == "message":
+                    log.info("%s %+.0f dB  %s", mode, r["snr"], r["message"])
+                    self.on_event({"type": "message", "mode": mode, "snr": r["snr"], "text": r["message"],
+                                   "call": r.get("call"), "freq_hz": r["freq_hz"], "start": start})
+                    continue
                 if r.get("kind") == "text":
                     log.info("TEXT  [%d%s] %r  %+.1f dB", r["seq"], "+" if r["more"] else "", r["text"], r["snr"])
                     self.on_event({"type": "text", "text": r["text"], "snr": r["snr"], "mode": mode, "start": start})
@@ -142,11 +195,12 @@ class Listener:
                 extra = {k: r[k] for k in ("fade_db", "spread_hz") if k in r}
                 sp = spots.add({"call": r["call"], "grid": r["grid"], "snr": r["snr"], "freq_hz": r["freq_hz"],
                                 "mode": mode, "direction": "rx", "slot": int(start), **extra}, self.spot_path)
-                log.info("DECODE %s %s %+.1f dB  %.6f MHz", r["call"], r["grid"], r["snr"], r["freq_hz"] / 1e6)
-                self.on_event({"type": "decode", "spot": sp})
-                if self.reporter:
+                log.info("DECODE %s %s %+.1f dB  %.6f MHz%s", r["call"], r["grid"], r["snr"], r["freq_hz"] / 1e6,
+                         f"  {r['message']}" if r.get("message") else "")
+                self.on_event({"type": "decode", "spot": sp, "message": r.get("message", "")})
+                if self.reporter and mode != "APRS":       # APRS belongs on APRS-IS, not PSK Reporter
                     self.reporter.add(sp)
-            if not res:
+            if not res and self.mode != "aprs":
                 log.info("slot %s: no decode", time.strftime("%H:%M:%S", time.gmtime(start)))
             self.on_event({"type": "result", "start": start, "count": len(res), "level_db": level_db,
                            **self._info()})

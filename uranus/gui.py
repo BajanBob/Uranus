@@ -266,6 +266,7 @@ class App(tk.Tk):
         self.dec = {"type": "idle"}          # latest decoder state for the status panel
         self.ticker_items = []               # "heard" messages scrolling along the bottom
         self.heard_seen = set()
+        self.heard_calls = set()             # stations heard this session, so busy modes alert only once each
         self.next_heard_poll = time.time() + 120
         self.wf_rows = []                    # waterfall rows from the audio thread
         self.wf_img = None
@@ -478,12 +479,14 @@ class App(tk.Tk):
         sel.pack(fill="x")
         ttk.Label(sel, text="Decode", style="CardMuted.TLabel").pack(side="left")
         from . import cucumber, pumpkin, urmode
-        subs = list(pumpkin.SUBMODES) + list(cucumber.SUBMODES) + list(urmode.SUBMODES)
+        subs = ["FT8", "WSPR", "APRS"] + list(pumpkin.SUBMODES) + list(cucumber.SUBMODES) + list(urmode.SUBMODES)
         self.v_sub = tk.StringVar(value="PUMPKIN-60")
         cb = ttk.Combobox(sel, textvariable=self.v_sub, values=subs, state="readonly", width=13)
         cb.pack(side="left", padx=6)
         cb.bind("<<ComboboxSelected>>", lambda e: self.save_listen(mode_changed=True))
-        Tooltip(cb, "What Listen + decode looks for.\nPUMPKIN: SSB rig (USB-D), most sensitive, needs a GPS-locked "
+        Tooltip(cb, "What Listen + decode looks for.\nFT8 and WSPR: decoded with WSJT-X's own decoders (install WSJT-X)."
+                    "\nAPRS: built-in 1200-baud packet decoder, listens all the time (FM-D, squelch open)."
+                    "\nPUMPKIN: SSB rig (USB-D), most sensitive, needs a GPS-locked "
                     "radio at both ends.\nCUCUMBER: any FM radio (FM-D, squelch open), no GPS needed.\nUR: SSB, "
                     "no GPS needed.\n-15 = 15-second slots, -60 = 60-second slots (about 6 dB more sensitive).")
         ttk.Label(sel, text="MHz", style="CardMuted.TLabel").pack(side="left", padx=(6, 0))
@@ -520,18 +523,19 @@ class App(tk.Tk):
 
     def _dial_options(self, sub):
         from . import freqplan
-        mode = {"PUMPKIN": "pumpkin", "CUCUMBER": "cucumber", "UR": "ur"}[sub.split("-")[0]]
+        mode = MODE_OF[sub.split("-")[0]]
         names = {"2m": "2 m", "1.25m": "1.25 m", "70cm": "70 cm"}
         return [f"{o.mhz:.3f}   {names[o.band]} · {o.status} · {o.note}" for b in ("2m", "1.25m", "70cm")
                 for o in freqplan.options(b, mode)]
 
     def save_listen(self, mode_changed=False):
         sub = self.v_sub.get()
-        mode = {"PUMPKIN": "pumpkin", "CUCUMBER": "cucumber", "UR": "ur"}[sub.split("-")[0]]
+        mode = MODE_OF[sub.split("-")[0]]
         if hasattr(self, "dial_cb"):
             self.dial_cb.config(values=self._dial_options(sub))
         if mode_changed:
-            self.v_dial.set({"pumpkin": "144.490", "ur": "144.490"}.get(mode, self._cucumber_freq()))
+            self.v_dial.set({"pumpkin": "144.490", "ur": "144.490", "ft8": "144.174", "wspr": "144.489",
+                             "aprs": "144.390"}.get(mode, self._cucumber_freq()))
         try:
             dial = float(self.v_dial.get().split()[0])
         except ValueError:
@@ -569,6 +573,12 @@ class App(tk.Tk):
                     self.on_decode(e["spot"])
                 elif t == "text":
                     self.add_ticker(f"TEXT  {e['text']}  ({e['snr']:+.0f} dB, {e['mode']})", alert=True)
+                elif t == "message":
+                    new = bool(e.get("call")) and e["call"] not in self.heard_calls
+                    if e.get("call"):
+                        self.heard_calls.add(e["call"])
+                    snr = "" if e["mode"] == "APRS" else f"  {e['snr']:+.0f} dB"
+                    self.add_ticker(f"{e['mode']}{snr}  {e['text']}", alert=new, log=False)
         except queue.Empty:
             pass
 
@@ -604,13 +614,19 @@ class App(tk.Tk):
         elif t == "recording":
             done = min(1.0, max(0.0, (now - e["start"]) / e["rec_s"]))
             self.dec_head.config(text=f"Listening · {where}", fg=C["blue"])
+            if sub == "APRS":
+                self.dec_line.config(text="Listening continuously for APRS packets, decoding every 10 seconds")
+                self.dec_bar.itemconfig(self.dec_fill, fill=C["blue"])
+                self.dec_bar.coords(self.dec_fill, 0, 0, w * done, 10)
+                return
             self.dec_line.config(text=f"Recording slot {time.strftime('%H:%M:%S', time.gmtime(e['start']))}: "
                                       f"{int(done * e['rec_s'])} of {int(e['rec_s'])} s, then decoding")
             self.dec_bar.itemconfig(self.dec_fill, fill=C["blue"])
             self.dec_bar.coords(self.dec_fill, 0, 0, w * done, 10)
         elif t == "decoding":
             self.dec_head.config(text=f"Decoding · {where}", fg=C["amber"])
-            self.dec_line.config(text="Searching the recording for Pumpkin / Cucumber / UR frames...")
+            self.dec_line.config(text=f"Searching the recording for {sub} signals"
+                                      + (" with WSJT-X's decoder..." if sub in ("FT8", "WSPR") else "..."))
             self.dec_bar.itemconfig(self.dec_fill, fill=C["amber"])
             self.dec_bar.coords(self.dec_fill, 0, 0, w, 10)
         elif t == "result":
@@ -634,7 +650,7 @@ class App(tk.Tk):
 
     def describe(self, call, grid, snr, hz, mode, prefix):
         from . import geo
-        txt = f"{prefix} {call}  {grid}  {snr:+.0f} dB  {self.band_of(hz)} {mode}"
+        txt = f"{prefix} {call}  {grid}  " + ("" if snr is None else f"{snr:+.0f} dB  ") + f"{self.band_of(hz)} {mode}"
         home = self._home()
         try:
             if home and grid:
@@ -645,15 +661,20 @@ class App(tk.Tk):
         return txt + time.strftime("  %H:%MZ", time.gmtime())
 
     def on_decode(self, sp):
-        self.add_ticker(self.describe(sp["call"], sp.get("grid", ""), sp["snr"], sp.get("freq_hz"), sp["mode"],
-                                      "HEARD"), alert=True)
+        # FT8 and APRS can bring dozens of stations a minute: alert only for a station new this session
+        noisy = sp["mode"] in ("FT8", "APRS", "WSPR")
+        new = sp["call"] not in self.heard_calls
+        self.heard_calls.add(sp["call"])
+        snr = sp["snr"] if sp["mode"] != "APRS" else None
+        self.add_ticker(self.describe(sp["call"], sp.get("grid", ""), snr, sp.get("freq_hz"), sp["mode"],
+                                      "HEARD" if new else "heard"), alert=new or not noisy)
 
-    def add_ticker(self, text, alert=False):
+    def add_ticker(self, text, alert=False, log=True):
         self.ticker_items.insert(0, text)
         del self.ticker_items[12:]
         self.ticker_x = None
         self._ticker_text()
-        if alert:
+        if alert and log:
             self.print(f"*** {text}\n")
             if self.v_beep.get():
                 self.flash()
@@ -921,6 +942,8 @@ class App(tk.Tk):
         self.update_psk()
         if hasattr(self, "v_sub"):
             sub = rx.get("submode", "PUMPKIN-60")
+            if rx.get("mode") in ("ft8", "wspr", "aprs"):
+                sub = rx["mode"].upper()
             if sub.startswith("URC-"):
                 sub = "PUMPKIN-" + sub.split("-")[1]
             self.v_sub.set(sub)
@@ -1056,7 +1079,7 @@ class App(tk.Tk):
                     from . import rigctl
                     from .radio import HamlibRadio
                     print(rigctl.ensure(cfg))
-                    rig_mode = "FM" if rx.get("mode") == "cucumber" else "USB"
+                    rig_mode = "FM" if rx.get("mode") in ("cucumber", "aprs") else "USB"
                     r = HamlibRadio(rc["rigctld_host"], rc["rigctld_port"], rc.get("audio_device", "default"))
                     r.tune(float(rx.get("dial_mhz", 144.49)) * 1e6, rig_mode)
                     r.sock.close()
@@ -1466,6 +1489,8 @@ def test_radio_async(widget, cfg, done):
         widget.after(0, lambda: done(ok, msg))
     threading.Thread(target=go, daemon=True).start()
 
+
+MODE_OF = {"PUMPKIN": "pumpkin", "CUCUMBER": "cucumber", "UR": "ur", "FT8": "ft8", "WSPR": "wspr", "APRS": "aprs"}
 
 MODE_HELP = {
     "aprs": "APRS position beacon, FM, 1200 baud. Heard by APRS digipeaters and i-gates (aprs.fi).",

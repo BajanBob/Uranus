@@ -96,3 +96,109 @@ def wspr_audio(call, grid, dbm, f0=1500.0):
     """162 symbols x 8192/12000 s, 1.4648 Hz spacing (110.6 s). f0 = centre of signal."""
     spacing = FS / 8192
     return gfsk(wspr_tones(call, grid, dbm), 8192, spacing, f0 - 1.5 * spacing)
+
+
+# --------------------------------------------------------------------------- receive: WSJT-X decoders
+# jt9 (FT8) and wsprd (WSPR) are WSJT-X's own decoders. Uranus records one slot of the
+# radio's audio at 12 kHz, writes it to a WAV and runs the decoder on it, exactly as
+# WSJT-X does internally, then reads the decoded lines.
+
+_FT8_LINE = re.compile(r"^\s*(\d{4,6})\s+(-?\d+)\s+(-?\d+\.\d)\s+(\d+)\s+[~#:@+&$]\s+(.+?)\s*$")
+_WSPR_LINE = re.compile(r"(-?\d+)\s+(-?\d+\.\d+)\s+(\d+\.\d{6})\s+(-?\d+)\s+(\S.*?)\s*$")
+_GRID = re.compile(r"^[A-R]{2}\d{2}([A-Xa-x]{2})?$")
+_CALL = re.compile(r"^(?=.*\d)[A-Z0-9/]{3,11}$")
+
+
+class DecoderMissing(RuntimeError):
+    pass
+
+
+def decoder_path(tool):
+    exe = _find(tool)
+    if not exe:
+        raise DecoderMissing(f"{tool} not found. FT8 and WSPR decoding use WSJT-X's own decoders: install "
+                             "WSJT-X (free, from wsjt.sourceforge.io). Uranus finds it in C:\\WSJT\\wsjtx\\bin, "
+                             "or set WSJTX_BIN to its bin folder.")
+    return exe
+
+
+def _write_wav(path, x, fs=FS):
+    import wave
+    pcm = (np.clip(np.asarray(x, float) / (np.max(np.abs(x)) + 1e-9) * 0.7, -1, 1) * 32767).astype("<i2")
+    with wave.open(path, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(fs)
+        w.writeframes(pcm.tobytes())
+
+
+def parse_ft8_message(msg):
+    """(sender, grid) from an FT8 message text. Grid is '' when the message has none."""
+    t = msg.replace("<", "").replace(">", "").split()
+    if not t:
+        return None, ""
+    if t[0] == "CQ":
+        rest = t[1:]
+        if rest and not _CALL.match(rest[0]) and len(rest) > 1:
+            rest = rest[1:]                  # CQ DX / CQ POTA ...
+        call = rest[0] if rest else None
+        grid = rest[1] if len(rest) > 1 and _GRID.match(rest[1]) and rest[1] != "RR73" else ""
+        return (call if call and _CALL.match(call) else None), grid
+    if len(t) >= 2 and _CALL.match(t[1]):
+        grid = t[2] if len(t) > 2 and _GRID.match(t[2]) and t[2] != "RR73" else ""
+        return t[1], grid
+    return None, ""
+
+
+def ft8_decode(x, dial_hz, fs=FS, workdir=None):
+    """Decode one 15-second FT8 slot with WSJT-X's jt9. Returns dicts: snr, dt, freq_hz, message, call, grid."""
+    import tempfile
+    exe = decoder_path("jt9")
+    n = 15 * fs
+    x = np.asarray(x, float)
+    x = np.pad(x, (0, max(0, n - len(x))))[:n]
+    d = workdir or tempfile.mkdtemp(prefix="uranus_ft8_")
+    wav = os.path.join(d, "000000_000000.wav")
+    _write_wav(wav, x, fs)
+    out = subprocess.run([exe, "-8", "-p", "15", "-d", "3", "-L", "100", "-H", "3200",
+                          "-a", d, "-t", d, wav], capture_output=True, text=True, timeout=60, cwd=d).stdout
+    res = []
+    for line in out.splitlines():
+        m = _FT8_LINE.match(line)
+        if not m:
+            continue
+        msg = m.group(5).strip()
+        call, grid = parse_ft8_message(msg)
+        res.append({"snr": float(m.group(2)), "dt": float(m.group(3)), "freq_hz": int(dial_hz + int(m.group(4))),
+                    "message": msg, "call": call, "grid": grid})
+    return res
+
+
+def wspr_decode(x, dial_hz, fs=FS, workdir=None, utc=None):
+    """Decode one 2-minute WSPR slot with WSJT-X's wsprd. Returns dicts: snr, dt, freq_hz, drift, call, grid, dbm."""
+    import tempfile
+    import time
+    exe = decoder_path("wsprd")
+    n = 114 * fs
+    x = np.asarray(x, float)
+    x = np.pad(x, (0, max(0, n - len(x))))[:n]
+    d = workdir or tempfile.mkdtemp(prefix="uranus_wspr_")
+    stamp = time.strftime("%y%m%d_%H%M", time.gmtime(utc or time.time()))
+    wav = os.path.join(d, stamp + ".wav")
+    _write_wav(wav, x, fs)
+    out = subprocess.run([exe, "-f", f"{dial_hz / 1e6:.6f}", "-a", d, wav], capture_output=True, text=True,
+                         timeout=120, cwd=d).stdout
+    res = []
+    for line in out.splitlines():
+        if "<DecodeFinished>" in line:
+            continue
+        m = _WSPR_LINE.search(line)
+        if not m:
+            continue
+        t = m.group(5).replace("<", "").replace(">", "").split()
+        call = t[0] if t and _CALL.match(t[0]) else None
+        grid = t[1] if len(t) > 1 and _GRID.match(t[1]) else ""
+        dbm = int(t[-1]) if t and t[-1].lstrip("-").isdigit() else None
+        res.append({"snr": float(m.group(1)), "dt": float(m.group(2)), "freq_hz": int(float(m.group(3)) * 1e6),
+                    "drift": int(m.group(4)), "message": " ".join(t), "call": call, "grid": grid, "dbm": dbm})
+    return res
