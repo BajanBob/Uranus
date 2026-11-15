@@ -37,12 +37,51 @@ def bundled(path):
 
 
 BASE = base_dir()
-CONFIG = os.path.join(BASE, "config", "uranus.toml")
+
+
+def settings_path():
+    """Where settings live. Uranus.exe keeps them in the Windows user profile (%APPDATA%\\Uranus), so a
+    new version in a new folder still has your callsign and radio. Source installs use config/uranus.toml."""
+    if getattr(sys, "frozen", False) and os.name == "nt" and os.environ.get("APPDATA"):
+        return os.path.join(os.environ["APPDATA"], "Uranus", "uranus.toml")
+    return os.path.join(BASE, "config", "uranus.toml")
+
+
+CONFIG = settings_path()
+MIGRATED_FROM = ""
+
+
+def _callsign_of(path):
+    try:
+        import tomllib
+        with open(path, "rb") as f:
+            return tomllib.load(f).get("station", {}).get("callsign", "")
+    except Exception:                            # noqa: BLE001
+        return ""
+
+
+def _older_settings():
+    """Settings files of earlier Uranus folders (this folder, and siblings such as
+    Downloads\\Uranus-Windows-exe-v0.8.1\\Uranus-Windows-exe), newest first, real callsign only."""
+    import glob
+    up1, up2 = os.path.dirname(BASE), os.path.dirname(os.path.dirname(BASE))
+    cands = [os.path.join(BASE, "config", "uranus.toml")]
+    cands += glob.glob(os.path.join(up1, "*", "config", "uranus.toml"))
+    cands += glob.glob(os.path.join(up2, "*", "*", "config", "uranus.toml"))
+    good = [c for c in set(cands) if os.path.isfile(c) and _callsign_of(c) not in ("", "N0CALL")]
+    return sorted(good, key=os.path.getmtime, reverse=True)
 
 
 def ensure_config():
-    if not os.path.exists(CONFIG):
-        os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
+    global MIGRATED_FROM
+    if os.path.exists(CONFIG):
+        return
+    os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
+    older = _older_settings() if CONFIG != os.path.join(BASE, "config", "uranus.toml") else []
+    if older:
+        shutil.copy(older[0], CONFIG)
+        MIGRATED_FROM = older[0]
+    else:
         shutil.copy(bundled(os.path.join("config", "uranus.toml")), CONFIG)
 
 
@@ -255,7 +294,8 @@ class App(tk.Tk):
         self._console(right)
 
         self.print(f"Uranus {__version__}\nFolder: {BASE}\nSettings: {CONFIG}\n"
-                   "Hover over any control for help.\n\n")
+                   + (f"Your settings were brought over from {MIGRATED_FROM}\n" if MIGRATED_FROM else "")
+                   + "Hover over any control for help.\n\n")
         self.refresh_station()
         self.set_state("idle", "Ready. New here? Press 'Setup wizard'.")
         self.after(100, self.poll)
@@ -1141,6 +1181,19 @@ def ic9100_note(profile_name):
     return ""
 
 
+def station_keys(call, grid):
+    """Settings for callsign and grid, with latitude and longitude worked out from the grid."""
+    from . import geo
+    g4 = grid[:2].upper() + grid[2:4]
+    g6 = g4 + grid[4:6].lower() if len(grid) == 6 else ""
+    lat, lon = geo.grid_to_latlon(g6 or g4)
+    ch = {("station", "callsign"): call.upper(), ("station", "grid"): g4,
+          ("station", "lat"): round(lat, 3), ("station", "lon"): round(lon, 3)}
+    if g6:
+        ch[("station", "grid6")] = g6
+    return ch
+
+
 class SetupWindow(tk.Toplevel):
     """Station setup: radio/SDR, backend, CAT, audio, bands - all from lists, with hover help."""
 
@@ -1175,6 +1228,13 @@ class SetupWindow(tk.Toplevel):
             Tooltip(widget, tip)
             row[0] += 1
 
+        st = self.cfg.get("station", {})
+        self.v["call"] = tk.StringVar(value="" if st.get("callsign") == "N0CALL" else st.get("callsign", ""))
+        add("Callsign", ttk.Entry(f, textvariable=self.v["call"], width=14),
+            "Your callsign, 3-6 characters, no '/'. Shown at the top of the main window and sent in every beacon.")
+        self.v["grid"] = tk.StringVar(value=st.get("grid6") or st.get("grid", ""))
+        add("Grid square", ttk.Entry(f, textvariable=self.v["grid"], width=10),
+            "Your Maidenhead locator: 4 characters (GK03) or 6 for better map distances (GK03ec).")
         names = [p.name for p in radios.PROFILES]
         self.v["profile"] = tk.StringVar(value=rc.get("profile") if rc.get("profile") in names else names[0])
         cb = ttk.Combobox(f, textvariable=self.v["profile"], values=names, state="readonly", width=50)
@@ -1255,12 +1315,31 @@ class SetupWindow(tk.Toplevel):
                                                         "switching the radio on or plugging in its USB cable."),
                 ("Test radio", self.test_radio, "Go", "Connect to the radio with the settings above and read "
                                                       "its frequency. Hamlib is built in and starts by itself."),
-                ("Save", self.save, "Accent", "Write these choices into uranus.toml (other settings are kept)."),
-                ("Close", self.destroy, None, "Close without saving.")]:
+                ("Save settings", self.save, "Accent", "Save everything on this page. Your settings are kept "
+                                                       "when you close Uranus and when you install a new version."),
+                ("Close", self.close, None, "Close this window. If you changed something, Uranus asks whether "
+                                            "to save it.")]:
             b = ttk.Button(bb, text=text, command=cmd, style=f"{style}.TButton" if style else "TButton")
             b.pack(side="left", padx=4)
             Tooltip(b, tip)
+        self.saved_lbl = tk.Label(f, text="", bg=C["bg"], fg=C["green"], font=(UI, 10, "bold"))
+        self.saved_lbl.grid(row=row[0] + 1, column=0, columnspan=3, sticky="e", pady=(6, 0))
         self.on_profile(initial=True)
+        self.snapshot = self._values()
+        self.protocol("WM_DELETE_WINDOW", self.close)
+
+    def _values(self):
+        return {k: v.get() for k, v in self.v.items()}
+
+    def close(self):
+        if self._values() != self.snapshot:
+            ans = messagebox.askyesnocancel("Station setup", "You changed settings on this page.\n\nSave them "
+                                            "before closing?", parent=self)
+            if ans is None:
+                return
+            if ans and not self.save():
+                return
+        self.destroy()
 
     def refresh(self):
         self.ports = serial_ports()
@@ -1307,22 +1386,31 @@ class SetupWindow(tk.Toplevel):
         try:
             lo = float(self.v["lo"].get() or 0)
         except ValueError:
-            messagebox.showerror("Settings", "Transverter LO must be a number in MHz.")
-            return
-        ch = {("radio", "profile"): self.v["profile"].get(),
+            messagebox.showerror("Settings", "Transverter LO must be a number in MHz.", parent=self)
+            return False
+        call, grid = self.v["call"].get().strip().upper(), self.v["grid"].get().strip()
+        if not re.fullmatch(r"[A-Z0-9]{3,6}", call) or not re.search(r"\d", call):
+            messagebox.showerror("Settings", "Callsign: 3 to 6 letters and digits with at least one digit, no '/' "
+                                             "(e.g. 8P5AB).", parent=self)
+            return False
+        if not re.fullmatch(r"[A-Ra-r]{2}\d{2}([A-Xa-x]{2})?", grid):
+            messagebox.showerror("Settings", "Grid square: 4 or 6 characters, e.g. GK03 or GK03ec.", parent=self)
+            return False
+        ch = station_keys(call, grid)
+        ch.update({("radio", "profile"): self.v["profile"].get(),
               ("radio", "backend"): self.v["backend"].get(),
               ("radio", "cat_port"): port_from_label(self.v["cat_port"].get()),
               ("radio", "cat_baud"): int(self.v["cat_baud"].get() or 19200),
               ("radio", "audio_device"): self.ad.spec_from_label(self.v["audio_out"].get()),
               ("receive", "audio_device"): self.ad.spec_from_label(self.v["audio_in"].get()),
               ("receive", "source"): self.v["source"].get(),
-              ("sdr", "hackrf_txvga"): int(float(self.v["txvga"].get() or 10))}
+              ("sdr", "hackrf_txvga"): int(float(self.v["txvga"].get() or 10))})
         if self.v["hamlib_model"].get().strip().isdigit():
             ch[("radio", "hamlib_model")] = int(self.v["hamlib_model"].get())
         err = write_keys(ch, {b: self.v["band_" + b].get() for b in ("2m", "1.25m", "70cm")})
         if err:
-            messagebox.showerror("Settings", err)
-            return
+            messagebox.showerror("Settings", err, parent=self)
+            return False
         with open(CONFIG, encoding="utf-8") as fh:
             t = self._set_band_key(fh.read(), "1.25m", "transverter_lo_mhz", lo)
         with open(CONFIG, "w", encoding="utf-8") as fh:
@@ -1330,6 +1418,9 @@ class SetupWindow(tk.Toplevel):
         self.app.print(f"\nSaved station setup to {CONFIG}\n")
         self.app.refresh_station()
         self.app.set_state("ok", "Station setup saved.")
+        self.snapshot = self._values()
+        self.saved_lbl.config(text="✔ Saved " + time.strftime("%H:%M:%S"))
+        return True
 
     @staticmethod
     def _set_band_key(t, band, key, value):
@@ -1574,7 +1665,12 @@ class SetupWizard(tk.Toplevel):
         self.b_back.pack(side="left")
         self.b_next = ttk.Button(nav, text="Next  ▶", style="Accent.TButton", command=self.next)
         self.b_next.pack(side="right")
-        ttk.Button(nav, text="Cancel", command=self.destroy).pack(side="right", padx=8)
+        bc = ttk.Button(nav, text="Close", command=self.close)
+        bc.pack(side="right", padx=8)
+        Tooltip(bc, "Close the wizard. Pages you finished with Next are already saved.")
+        self.saved = tk.Label(nav, text="", bg=C["bg"], fg=C["green"], font=(UI, 9, "bold"))
+        self.saved.pack(side="left", padx=12)
+        self.protocol("WM_DELETE_WINDOW", self.close)
         self.pages = [self.p_station, self.p_radio, self.p_connection, self.p_bands, self.p_psk, self.p_finish]
         self.i = 0
         self.goto(0)
@@ -1625,7 +1721,19 @@ class SetupWizard(tk.Toplevel):
         if self.i == len(self.pages) - 1:
             self.finish()
         else:
+            if self.i >= 1 and self.validate(0) is True:
+                self.finish(close=False)          # keep what is done so far, page by page
             self.goto(self.i + 1)
+
+    def close(self):
+        if self.i > 0 and self.validate(0) is True and self.i < len(self.pages) - 1:
+            ans = messagebox.askyesnocancel("Setup wizard", "Save what you have entered so far before "
+                                            "closing?", parent=self)
+            if ans is None:
+                return
+            if ans:
+                self.finish(close=False)
+        self.destroy()
 
     def validate(self, i):
         if i == 0:
@@ -1744,6 +1852,9 @@ class SetupWizard(tk.Toplevel):
                        "No USB Audio CODEC found yet. Check the radio is on, the USB cable is in and the radio's "
                        "USB driver is installed, then press Refresh. You can also pick it now and plug in later.",
                        C["green"] if codec else C["amber"])
+        if "9100" in p.name and self.v["baud"].get().strip() != "19200":
+            self._note(f"CAT speed is {self.v['baud'].get()}. The IC-9100's CI-V USB Baud Rate is normally 19200: "
+                       "set both to the same value, or Test radio will not get an answer.", C["amber"])
         if ic9100_note(p.name):
             self._note(ic9100_note(p.name), C["muted"])
 
@@ -1839,16 +1950,9 @@ class SetupWizard(tk.Toplevel):
             tk.Label(r, text=val, bg=C["panel"], fg=C["ink"], anchor="w", font=(UI, 10, "bold")).pack(side="left")
         self._note("Next: press 'Show plan', then 'Dry run'. Go ON AIR once the dry run looks right.", C["muted"])
 
-    def finish(self):
-        from . import geo
-        grid = self.v["grid"].get().strip()
-        g4 = grid[:2].upper() + grid[2:4]
-        g6 = g4 + grid[4:6].lower() if len(grid) == 6 else ""
-        lat, lon = geo.grid_to_latlon(g6 or g4)
-        ch = {("station", "callsign"): self.v["call"].get().strip().upper(),
-              ("station", "grid"): g4,
-              ("station", "lat"): round(lat, 3), ("station", "lon"): round(lon, 3),
-              ("station", "wspr_power_dbm"): int(self.v["power"].get().split()[0]),
+    def finish(self, close=True):
+        ch = station_keys(self.v["call"].get().strip(), self.v["grid"].get().strip())
+        ch.update({("station", "wspr_power_dbm"): int(self.v["power"].get().split()[0]),
               ("radio", "profile"): self.v["profile"].get(),
               ("radio", "backend"): self.v["backend"].get(),
               ("radio", "cat_port"): port_from_label(self.v["port"].get()),
@@ -1858,17 +1962,18 @@ class SetupWizard(tk.Toplevel):
               ("receive", "source"): "audio",
               ("reporting", "pskreporter"): self.v["psk"].get(),
               ("reporting", "pskreporter_test_server"): not self.v["psk_live"].get(),
-              ("reporting", "pskreporter_contact"): self.v["contact"].get().strip()}
-        if g6:
-            ch[("station", "grid6")] = g6
+              ("reporting", "pskreporter_contact"): self.v["contact"].get().strip()})
         if self.v["model"].get().strip().isdigit():
             ch[("radio", "hamlib_model")] = int(self.v["model"].get())
         err = write_keys(ch, {b: self.v["band_" + b].get() for b in ("2m", "1.25m", "70cm")})
         if err:
             messagebox.showerror("Settings", err, parent=self)
             return
-        self.app.print(f"\nSetup wizard saved your settings to {CONFIG}\n")
         self.app.refresh_station()
+        if not close:
+            self.saved.config(text="✔ Saved " + time.strftime("%H:%M:%S"))
+            return
+        self.app.print(f"\nSetup wizard saved your settings to {CONFIG}\n")
         self.app.set_state("ok", "Setup saved. Next: Show plan, then Dry run.")
         self.destroy()
 

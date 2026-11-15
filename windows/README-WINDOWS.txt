@@ -16,6 +16,12 @@ FROM SOURCE (needs Python):
 4. Double-click windows\plan.bat to see the transmit timeline.
 5. Double-click windows\pumpkin-demo.bat to watch the Pumpkin mode decode at -29 dB.
 
+SETTINGS
+Uranus.exe keeps your settings in %APPDATA%\Uranus\uranus.toml (your Windows
+profile), so they survive when you unzip a new version into a new folder. The
+first time a new version starts, it brings your settings over from an older
+Uranus folder automatically.
+
 GOING ON AIR (plug and play)
 - Switch the radio on and plug in its USB cable (Icom: install Icom's USB driver once).
 - Run the Setup wizard and choose your radio, e.g. Icom IC-9100. The COM port,

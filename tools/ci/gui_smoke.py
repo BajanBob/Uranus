@@ -67,6 +67,9 @@ wz.v["call"].set("8P5AB")
 wz.v["grid"].set("GK03ec")
 wz.v["profile"].set("Icom IC-9100")
 wz._apply_profile()
+wz.goto(1)
+wz.next()                                   # leaving a page saves what is done so far
+assert g.load_cfg()["station"]["callsign"] == "8P5AB", "wizard did not save page by page"
 for i in range(len(wz.STEPS)):
     wz.goto(i)
     assert wz.validate(i) is True or wz.v["backend"].get() == "hamlib", wz.validate(i)
@@ -107,7 +110,11 @@ assert g.load_cfg()["receive"]["mode"] == "cucumber"
 w = g.SetupWindow(a)
 w.geometry("+60+40")
 w.v["band_1.25m"].set(True)
-w.save()
+w.v["call"].set("8P5AB")
+w.v["grid"].set("GK03ec")
+w.v["cat_baud"].set("19200")
+assert w.save() is True
+assert g.load_cfg()["radio"]["cat_baud"] == 19200
 snap(w, "4-station-setup.png")
 w.destroy()
 c = g.ChatWindow(a)
