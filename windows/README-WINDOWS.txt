@@ -25,7 +25,8 @@ GOING ON AIR (plug and play)
 - Install WSJT-X if you want FT8/WSPR slots (Uranus uses its ft8code/wsprcode).
 - Make sure Windows time is accurate to well under 1 second
   (Settings > Time & language > Sync now; better: install Meinberg NTP).
-- Bands and modes: tick or untick each band, mode and frequency.
+- Bands and modes: one tab per band; tick each mode on or off and pick its
+  frequency from the band-plan list (see docs\FREQUENCIES.md).
 - Press Show plan, Dry run, then ON AIR.
 - Listen + decode: choose Pumpkin, Cucumber or UR in the Receiver panel. The
   panel shows the slot countdown, "Decoding...", and each slot's result; the

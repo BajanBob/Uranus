@@ -11,6 +11,7 @@
 [station]
 callsign = "N0CALL"          # your callsign (UR mode and WSPR: max 6 chars, no /)
 grid = "GK03"                # 4-char Maidenhead locator (sent on air)
+itu_region = 2               # ITU region: 1, 2 or 3 (Barbados and the Americas = 2)
 grid6 = "GK03ec"             # 6-char locator for map distances (optional)
 lat = 13.10                  # APRS position (decimal degrees, + = N / E)
 lon = -59.60
@@ -99,7 +100,7 @@ active = true                # switch the whole band on/off (Station setup does 
 
   [[band.slot]]
   mode = "wspr"
-  freq_mhz = 144.490         # usual 2 m WSPR dial is 144.489
+  freq_mhz = 144.489         # international 2 m WSPR dial (tones 144.4904-144.4906)
 
   [[band.slot]]              # experimental Uranus mode - see docs/UR-MODE.md
   mode = "ur"

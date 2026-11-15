@@ -130,6 +130,9 @@ def apply_theme(root):
     st.configure("Slot.TCheckbutton", background=C["panel"], foreground=C["ink"], font=(MONO, 10))
     st.map("Slot.TCheckbutton", background=[("active", C["panel"])], indicatorcolor=[("selected", C["orange"])],
            foreground=[("disabled", C["muted"])])
+    st.configure("TNotebook", background=C["bg"], borderwidth=0)
+    st.configure("TNotebook.Tab", background=C["panel2"], foreground=C["muted"], padding=(14, 6), font=(UI, 10, "bold"))
+    st.map("TNotebook.Tab", background=[("selected", C["panel"])], foreground=[("selected", C["orange"])])
     st.configure("TCombobox", fieldbackground=C["panel2"], background=C["panel2"], foreground=C["ink"],
                  arrowcolor=C["orange"], padding=4)
     st.map("TCombobox", fieldbackground=[("readonly", C["panel2"])], foreground=[("readonly", C["ink"])],
@@ -445,12 +448,15 @@ class App(tk.Tk):
                     "no GPS needed.\n-15 = 15-second slots, -60 = 60-second slots (about 6 dB more sensitive).")
         ttk.Label(sel, text="MHz", style="CardMuted.TLabel").pack(side="left", padx=(6, 0))
         self.v_dial = tk.StringVar(value="144.490")
-        de = ttk.Entry(sel, textvariable=self.v_dial, width=9)
+        de = ttk.Combobox(sel, textvariable=self.v_dial, width=10, values=self._dial_options("PUMPKIN-60"))
+        self.dial_cb = de
         de.pack(side="left", padx=6)
+        de.bind("<<ComboboxSelected>>", lambda e: (self.v_dial.set(self.v_dial.get().split()[0]), self.save_listen()))
         de.bind("<FocusOut>", lambda e: self.save_listen())
         de.bind("<Return>", lambda e: self.save_listen())
-        Tooltip(de, "Dial frequency the radio is tuned to while listening. Pumpkin 2 m: 144.490; Cucumber: the "
-                    "agreed FM simplex channel. Uranus tunes the radio here when you press Listen + decode.")
+        Tooltip(de, "Dial frequency the radio is tuned to while listening. The list holds the band-plan "
+                    "frequencies for the chosen mode on every band; you can also type one. Uranus tunes the radio "
+                    "here when you press Listen + decode.")
         self.dec_head = tk.Label(dec, text="", bg=C["panel"], fg=C["ink"], font=(UI, 12, "bold"), anchor="w")
         self.dec_head.pack(fill="x", pady=(10, 2))
         self.dec_bar = tk.Canvas(dec, height=10, bg=C["panel2"], highlightthickness=0)
@@ -472,13 +478,22 @@ class App(tk.Tk):
         Tooltip(bc, "Alert: a short sound and an orange flash of the status bar on every decode. Every decode "
                     "also scrolls along the bottom of the window.")
 
+    def _dial_options(self, sub):
+        from . import freqplan
+        mode = {"PUMPKIN": "pumpkin", "CUCUMBER": "cucumber", "UR": "ur"}[sub.split("-")[0]]
+        names = {"2m": "2 m", "1.25m": "1.25 m", "70cm": "70 cm"}
+        return [f"{o.mhz:.3f}   {names[o.band]} · {o.status} · {o.note}" for b in ("2m", "1.25m", "70cm")
+                for o in freqplan.options(b, mode)]
+
     def save_listen(self, mode_changed=False):
         sub = self.v_sub.get()
         mode = {"PUMPKIN": "pumpkin", "CUCUMBER": "cucumber", "UR": "ur"}[sub.split("-")[0]]
+        if hasattr(self, "dial_cb"):
+            self.dial_cb.config(values=self._dial_options(sub))
         if mode_changed:
             self.v_dial.set({"pumpkin": "144.490", "ur": "144.490"}.get(mode, self._cucumber_freq()))
         try:
-            dial = float(self.v_dial.get())
+            dial = float(self.v_dial.get().split()[0])
         except ValueError:
             messagebox.showerror("Dial", "The dial frequency must be a number in MHz, e.g. 144.490.")
             return
@@ -1370,12 +1385,13 @@ MODE_HELP = {
 
 
 class BandsModesWindow(tk.Toplevel):
-    """Tick bands, and each mode and frequency inside them, on or off."""
+    """One tab per band: tick each mode on or off and pick its frequency from the band plan."""
 
     def __init__(self, app):
         super().__init__(app)
-        self.app = app
-        self.title("Uranus - Bands and modes")
+        from . import freqplan
+        self.app, self.fp = app, freqplan
+        self.title("Uranus - Bands, modes and frequencies")
         self.configure(bg=C["bg"])
         self.resizable(False, False)
         try:
@@ -1384,44 +1400,99 @@ class BandsModesWindow(tk.Toplevel):
             messagebox.showerror("Settings", str(e))
             self.destroy()
             return
+        self.region = "R" + str(self.cfg.get("station", {}).get("itu_region", 2))
         f = ttk.Frame(self, padding=18)
         f.pack(fill="both")
-        ttk.Label(f, text="Bands and modes", style="Big.TLabel").pack(anchor="w")
-        tk.Label(f, text="Untick anything you do not want the beacon to send. Greyed-out bands are off as a whole. "
-                         "Check your licence before ticking a frequency.", bg=C["bg"], fg=C["muted"], font=(UI, 10),
-                 wraplength=620, justify="left").pack(anchor="w", pady=(4, 12))
-        cols = ttk.Frame(f)
-        cols.pack(fill="x")
-        self.v_band, self.v_slot = {}, {}
-        names = {"2m": "2 m", "1.25m": "1.25 m (220 MHz)", "70cm": "70 cm"}
+        ttk.Label(f, text="Bands, modes and frequencies", style="Big.TLabel").pack(anchor="w")
+        tk.Label(f, text=f"Tick what the beacon sends and pick each frequency from the list. Lists follow the "
+                         f"ITU Region {self.region[1]} allocations and IARU band plan: 'standard' and 'common' "
+                         "are in use today; 'proposed' are Uranus suggestions inside the right segment, to agree "
+                         "locally. You can also type a frequency. Your licence comes first.",
+                 bg=C["bg"], fg=C["muted"], font=(UI, 10), wraplength=760, justify="left").pack(anchor="w",
+                                                                                                pady=(4, 10))
+        nb = ttk.Notebook(f)
+        nb.pack(fill="both", expand=True)
+        self.v_band, self.v_slot, self.v_freq, self.warn, self.warn_msg = {}, {}, {}, {}, {}
+        names = {"2m": "2 m  144-148 MHz", "1.25m": "1.25 m  222-225 MHz", "70cm": "70 cm  420-450 MHz"}
         for band in self.cfg.get("band", []):
             bn = band["name"]
-            col = tk.Frame(cols, bg=C["panel"], padx=14, pady=10)
-            col.pack(side="left", fill="y", padx=(0, 10))
+            tab = tk.Frame(nb, bg=C["panel"], padx=14, pady=12)
+            nb.add(tab, text="  " + names.get(bn, bn).split("  ")[0] + "  ")
             self.v_band[bn] = tk.BooleanVar(value=band.get("active", True))
-            cb = ttk.Checkbutton(col, text=names.get(bn, bn), variable=self.v_band[bn], style="Card.TCheckbutton")
-            cb.pack(anchor="w", pady=(0, 6))
-            Tooltip(cb, "Switch the whole band on or off.")
+            cb = ttk.Checkbutton(tab, text=f"Use {names.get(bn, bn)}", variable=self.v_band[bn],
+                                 style="Card.TCheckbutton")
+            cb.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
+            Tooltip(cb, "Switch the whole band on or off." + (" 1.25 m is a Region 2 band; Barbados allows "
+                                                                "222-225 MHz." if bn == "1.25m" else ""))
+            r = 1
             for i, sl in enumerate(band.get("slot", [])):
+                mode = sl["mode"]
                 v = tk.BooleanVar(value=sl.get("enabled", True))
                 self.v_slot[(bn, i)] = v
-                label = f"{sl['mode'].upper():9s} {sl['freq_mhz']:.3f}"
-                if sl.get("submode"):
-                    label += f"  {sl['submode'].split('-')[1]}s"
-                c = ttk.Checkbutton(col, text=label, variable=v, style="Slot.TCheckbutton")
-                c.pack(anchor="w")
-                Tooltip(c, MODE_HELP.get(sl["mode"], sl["mode"]) + f"\nFrequency {sl['freq_mhz']:.3f} MHz.")
+                name = mode.upper() + (f" {sl['submode'].split('-')[1]}s" if sl.get("submode") else "")
+                c = ttk.Checkbutton(tab, text=name, variable=v, style="Slot.TCheckbutton", width=14)
+                c.grid(row=r, column=0, sticky="w")
+                Tooltip(c, MODE_HELP.get(mode, mode))
+                opts = [o.label() for o in freqplan.options(bn, mode, self.region)]
+                cur = freqplan.find(bn, mode, sl["freq_mhz"])
+                fv = tk.StringVar(value=cur.label() if cur else f"{sl['freq_mhz']:.4f}".rstrip("0"))
+                self.v_freq[(bn, i)] = (fv, mode)
+                combo = ttk.Combobox(tab, textvariable=fv, values=opts, width=66)
+                combo.grid(row=r, column=1, sticky="w", padx=8, pady=2)
+                Tooltip(combo, lambda b=bn, m=mode, v=fv: self._tip(b, m, v))
+                w = tk.Label(tab, text="", bg=C["panel"], fg=C["amber"], font=(UI, 9), anchor="w")
+                w.grid(row=r, column=2, sticky="w")
+                self.warn[(bn, i)] = w
+                Tooltip(w, lambda k=(bn, i): self.warn_msg.get(k, ""))
+                fv.trace_add("write", lambda *a, k=(bn, i): self._check(k))
+                self._check((bn, i))
+                r += 1
         bb = ttk.Frame(f)
-        bb.pack(fill="x", pady=(14, 0))
+        bb.pack(fill="x", pady=(12, 0))
         b = ttk.Button(bb, text="Save", style="Accent.TButton", command=self.save)
         b.pack(side="right")
         Tooltip(b, "Save, then press Show plan to see the new transmit schedule.")
         ttk.Button(bb, text="Close", command=self.destroy).pack(side="right", padx=8)
 
+    @staticmethod
+    def _mhz(text):
+        try:
+            return float(str(text).split()[0])
+        except (ValueError, IndexError):
+            return None
+
+    def _tip(self, band, mode, var):
+        mhz = self._mhz(var.get())
+        if mhz is None:
+            return "Pick a frequency from the list, or type one in MHz."
+        seg = self.fp.segment(band, mhz)
+        side = "FM channel centre" if mode in self.fp.FM_MODES else "USB dial; tones about 1.5 kHz above"
+        return (f"{mhz:.4f} MHz ({side}).\nBand-plan segment: {seg or 'not one Uranus knows'}.\n"
+                + MODE_HELP.get(mode, ""))
+
+    def _check(self, key):
+        fv, mode = self.v_freq[key]
+        mhz = self._mhz(fv.get())
+        if mhz is None:
+            self.warn[key].config(text="⚠ not a frequency", fg=C["red"])
+            return
+        msg = self.fp.check(key[0], mode, mhz, self.region)
+        bad = "outside" in msg or "Region 2 only" in msg
+        self.warn[key].config(text=("⚠ " + msg[:58] + ("…" if len(msg) > 58 else "")) if msg else "✔ in plan",
+                              fg=C["red"] if bad else C["amber"] if msg else C["green"])
+        self.warn_msg[key] = msg or "Inside the ITU allocation and a known band-plan segment."
+
     def save(self):
         from . import radios
         with open(CONFIG, encoding="utf-8") as fh:
             t = fh.read()
+        for (bn, i), (fv, mode) in self.v_freq.items():
+            mhz = self._mhz(fv.get())
+            if mhz is None or "outside" in self.fp.check(bn, mode, mhz, self.region):
+                messagebox.showerror("Frequency", f"{bn} {mode.upper()}: '{fv.get()}' is not a frequency inside "
+                                                  f"the {bn} allocation. Not saved.", parent=self)
+                return
+            t = radios.set_slot_key(t, bn, i, "freq_mhz", round(mhz, 4))
         for bn, v in self.v_band.items():
             t = radios.set_band_active(t, bn, v.get())
         for (bn, i), v in self.v_slot.items():
@@ -1435,8 +1506,8 @@ class BandsModesWindow(tk.Toplevel):
         with open(CONFIG, "w", encoding="utf-8") as fh:
             fh.write(t)
         self.app.refresh_station()
-        self.app.set_state("ok", "Bands and modes saved. Press Show plan to see the schedule.")
-        self.app.print("Bands and modes saved.\n")
+        self.app.set_state("ok", "Bands, modes and frequencies saved. Press Show plan to see the schedule.")
+        self.app.print("Bands, modes and frequencies saved.\n")
         self.destroy()
 
 

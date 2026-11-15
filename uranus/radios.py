@@ -160,6 +160,11 @@ def set_band_active(text, band, active):
 
 def set_slot_enabled(text, band, index, enabled):
     """Switch one [[band.slot]] (the index-th slot of `band`, from 0) on or off, keeping comments."""
+    return set_slot_key(text, band, index, "enabled", bool(enabled))
+
+
+def set_slot_key(text, band, index, key, value):
+    """Set `key = value` in the index-th [[band.slot]] of `band` (from 0), keeping comments."""
     lines = text.splitlines(keepends=True)
     cur_band, slot_i, target = None, -1, None
     for i, ln in enumerate(lines):
@@ -180,12 +185,13 @@ def set_slot_enabled(text, band, index, enabled):
         if lines[j].lstrip().startswith("["):
             end = j
             break
-    val = "true" if enabled else "false"
+    val = (f'"{value}"' if isinstance(value, str) else "true" if value is True else "false" if value is False
+           else (f"{value:.4f}".rstrip("0").rstrip(".") if isinstance(value, float) else str(value)))
     for j in range(target + 1, end):
-        if lines[j].strip().startswith("enabled ="):
+        if lines[j].strip().startswith(key + " =") or lines[j].strip().startswith(key + "="):
             indent = lines[j][:len(lines[j]) - len(lines[j].lstrip())]
             comment = ("  " + lines[j][lines[j].index("#"):].rstrip("\n")) if "#" in lines[j] else ""
-            lines[j] = f"{indent}enabled = {val}{comment}\n"
+            lines[j] = f"{indent}{key} = {val}{comment}\n"
             return "".join(lines)
     body = [ln for ln in lines[target + 1:end] if ln.strip()]
     indent = body[0][:len(body[0]) - len(body[0].lstrip())] if body else "  "
@@ -193,5 +199,5 @@ def set_slot_enabled(text, band, index, enabled):
     for j in range(target + 1, end):
         if lines[j].strip():
             last = j + 1
-    lines.insert(last, f"{indent}enabled = {val}\n")
+    lines.insert(last, f"{indent}{key} = {val}\n")
     return "".join(lines)

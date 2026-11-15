@@ -301,6 +301,20 @@ class TestBandsRadiosSDR(unittest.TestCase):
             rigctl.stop()
             del os.environ["URANUS_HAMLIB_DIR"]
 
+    def test_frequency_plan_inside_itu_allocations(self):
+        from uranus import freqplan as fp
+        for f in fp.PLAN:
+            self.assertEqual(fp.check(f.band, f.mode, f.mhz, f.region if f.region != "All" else "R2"), "", f)
+            self.assertTrue(fp.segment(f.band, f.mhz), f)
+        for band in fp.BAND_EDGES:
+            for mode in ("ft8", "pumpkin"):
+                self.assertTrue(fp.options(band, mode), (band, mode))
+        self.assertIn("outside", fp.check("2m", "aprs", 148.0))
+        self.assertIn("Region 2 only", fp.check("1.25m", "pumpkin", 222.13, "R1"))
+        wspr = fp.find("2m", "wspr", 144.489)
+        pk = fp.find("2m", "pumpkin", 144.490)
+        self.assertGreater((pk.mhz + 0.0015) - (wspr.mhz + 0.0016), 0.0005)   # Pumpkin tones clear of WSPR
+
     def test_pskreporter_live_status(self):
         from uranus import pskreporter
         r = pskreporter.Reporter("8P5AB", "GK03", test=True)

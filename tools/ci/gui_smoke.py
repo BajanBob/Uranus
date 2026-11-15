@@ -91,11 +91,15 @@ bm = g.BandsModesWindow(a)
 bm.geometry("+60+40")
 bm.v_slot[("2m", 7)].set(True)              # Pumpkin 144.490 on
 bm.v_slot[("2m", 4)].set(False)             # FT8 off
+from uranus import freqplan                 # noqa: E402
+bm.v_freq[("2m", 7)][0].set(freqplan.find("2m", "pumpkin", 144.285).label())
+bm.v_freq[("2m", 5)][0].set("144.489")
 snap(bm, "6-bands-modes.png")
 bm.save()
 cfg = g.load_cfg()
 b2 = [b for b in cfg["band"] if b["name"] == "2m"][0]["slot"]
 assert b2[7]["enabled"] is True and b2[4]["enabled"] is False
+assert abs(b2[7]["freq_mhz"] - 144.285) < 1e-6 and abs(b2[5]["freq_mhz"] - 144.489) < 1e-6, b2
 a.v_sub.set("CUCUMBER-15")
 a.save_listen(mode_changed=True)
 assert g.load_cfg()["receive"]["mode"] == "cucumber"
