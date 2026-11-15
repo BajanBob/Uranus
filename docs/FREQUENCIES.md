@@ -12,15 +12,22 @@ Every entry is checked automatically to be inside the ITU Region 2 allocation an
 
 | Mode | Dial MHz | Region | Status | Notes | Band-plan segment |
 |---|---|---|---|---|---|
-| APRS | 144.39 | R2 | standard | APRS, North America and the Caribbean | ARRL 'new OSCAR' segment, used for WSPR 144.489 |
-| APRS | 144.8 | R1 | standard | APRS, Europe and Africa (Region 1 only) | APRS (IARU Region 1 channel 144.800) |
+| APRS | 144.39 | R2 | standard | APRS: North America, Caribbean, Colombia, Chile; also Indonesia, Malaysia, Thailand | ARRL 'new OSCAR' segment, used for WSPR 144.489 |
+| APRS | 144.575 | R3 | standard | APRS: New Zealand | all-mode and digital (IARU Region 1 and 3 plans; APRS in NZ, Taiwan, Japan) |
+| APRS | 144.64 | R3 | standard | APRS: Taiwan (China is also listed) | all-mode and digital (IARU Region 1 and 3 plans; APRS in NZ, Taiwan, Japan) |
+| APRS | 144.66 | R3 | standard | APRS: Japan | all-mode and digital (IARU Region 1 and 3 plans; APRS in NZ, Taiwan, Japan) |
+| APRS | 144.8 | R1 | standard | APRS: Europe, South Africa, Russia | digital communications (IARU Region 1; APRS 144.800) |
+| APRS | 144.93 | R2 | standard | APRS: Argentina, Uruguay | digital communications (IARU Region 1; APRS 144.800) |
+| APRS | 145.175 | R3 | standard | APRS: Australia | digital and packet in some Region 3 plans (APRS 145.175, Australia) |
+| APRS | 145.57 | R2 | standard | APRS: Brazil | FM simplex and digital (local option; APRS 145.570, Brazil) |
+| APRS | 145.825 | All | standard | APRS via the ISS and satellites (path ARISS), worldwide | amateur satellites (ISS and satellite APRS 145.825) |
 | FT8 | 144.174 | All | standard | FT8 calling (WSJT-X default) | weak-signal SSB/CW and digital (FT8 144.174) |
 | WSPR | 144.489 | All | standard | WSPR, tones 144.4904-144.4906 | ARRL 'new OSCAR' segment, used for WSPR 144.489 |
 | PUMPKIN | 144.171 | All | proposed | weak-signal digital, just below FT8 | weak-signal SSB/CW and digital (FT8 144.174) |
 | PUMPKIN | 144.285 | R2 | proposed | Region 2 beacon segment 144.275-144.300 | propagation beacons (IARU Region 2) |
 | PUMPKIN | 144.49 | All | proposed | tones at 144.4915, 800 Hz above the WSPR window | ARRL 'new OSCAR' segment, used for WSPR 144.489 |
 | CUCUMBER | 145.05 | All | proposed | packet and digital segment 144.90-145.10 | packet and digital data |
-| CUCUMBER | 145.58 | R2 | proposed | FM simplex / digital area; agree locally | FM simplex and digital (local option) |
+| CUCUMBER | 145.58 | R2 | proposed | FM simplex / digital area; agree locally | FM simplex and digital (local option; APRS 145.570, Brazil) |
 | UR | 144.287 | R2 | proposed | Region 2 beacon segment | propagation beacons (IARU Region 2) |
 | UR | 144.49 | All | proposed | tones near 144.4915, clear of the WSPR window | ARRL 'new OSCAR' segment, used for WSPR 144.489 |
 
@@ -42,8 +49,7 @@ Every entry is checked automatically to be inside the ITU Region 2 allocation an
 
 | Mode | Dial MHz | Region | Status | Notes | Band-plan segment |
 |---|---|---|---|---|---|
-| APRS | 432.5 | R2 | proposed | no Region 2 APRS standard; check local plan | mixed mode and weak-signal work (FT8 432.174) |
-| APRS | 433.8 | R1 | standard | APRS, Europe (Region 1 only) | auxiliary and repeater links, digital (check local plan) |
+| APRS | 432.5 | R1 | standard | APRS on UHF: Europe (no Region 2 standard) | mixed mode and weak-signal work (FT8 432.174) |
 | FT8 | 432.065 | All | standard | FT8 (WSJT-X default) | weak-signal CW/SSB, EME (calling 432.100) |
 | FT8 | 432.174 | All | common | FT8, widely used (matches 144.174) | mixed mode and weak-signal work (FT8 432.174) |
 | WSPR | 432.3 | R2 | common | WSPR, US groups; beacon segment | mixed mode and weak-signal work (FT8 432.174) |

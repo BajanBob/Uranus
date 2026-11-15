@@ -130,7 +130,7 @@ jobs:
             Windows: Uranus-Windows-exe.zip - unzip and double-click Uranus.exe (no Python needed).
             Raspberry Pi: Uranus-RaspberryPi.zip - unzip and run  bash linux/install-pi.sh
             Linux: Uranus-Linux.zip - unzip and run  bash linux/install-linux.sh
-            New in this version: transmit fix - Uranus now puts the radio in its data mode (USB-D / FM-D) so the USB audio is transmitted; Test transmit button; station map opens in your web browser. Plus FT8, WSPR and APRS decoding.
+            New in this version: worldwide APRS frequency list including 145.825 (ISS, path ARISS); transmit in data mode (USB-D / FM-D); Test transmit; map opens in your browser; FT8, WSPR and APRS decoding.
             Free software under GPL-3.0. Testers wanted worldwide: report results under Issues.
           files: |
             Uranus-Windows-exe.zip

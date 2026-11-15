@@ -24,9 +24,12 @@ SEGMENTS = {
     "2m": [(144.100, 144.275, "weak-signal SSB/CW and digital (FT8 144.174)"),
            (144.275, 144.300, "propagation beacons (IARU Region 2)"),
            (144.300, 144.500, "ARRL 'new OSCAR' segment, used for WSPR 144.489"),
-           (144.790, 144.810, "APRS (IARU Region 1 channel 144.800)"),
+           (144.500, 144.794, "all-mode and digital (IARU Region 1 and 3 plans; APRS in NZ, Taiwan, Japan)"),
+           (144.794, 144.990, "digital communications (IARU Region 1; APRS 144.800)"),
            (144.900, 145.100, "packet and digital data"),
-           (145.500, 145.800, "FM simplex and digital (local option)")],
+           (145.100, 145.200, "digital and packet in some Region 3 plans (APRS 145.175, Australia)"),
+           (145.500, 145.800, "FM simplex and digital (local option; APRS 145.570, Brazil)"),
+           (145.800, 146.000, "amateur satellites (ISS and satellite APRS 145.825)")],
     "1.25m": [(222.000, 222.150, "weak-signal modes"),
               (222.050, 222.060, "propagation beacons"),
               (223.400, 223.520, "FM simplex"),
@@ -55,8 +58,16 @@ class Freq:
 
 PLAN = [
     # ------------------------------------------------------------ 2 m
-    Freq("2m", "aprs", 144.390, "R2", "standard", "APRS, North America and the Caribbean"),
-    Freq("2m", "aprs", 144.800, "R1", "standard", "APRS, Europe and Africa (Region 1 only)"),
+    Freq("2m", "aprs", 144.390, "R2", "standard", "APRS: North America, Caribbean, Colombia, Chile; "
+                                                  "also Indonesia, Malaysia, Thailand"),
+    Freq("2m", "aprs", 144.930, "R2", "standard", "APRS: Argentina, Uruguay"),
+    Freq("2m", "aprs", 145.570, "R2", "standard", "APRS: Brazil"),
+    Freq("2m", "aprs", 144.800, "R1", "standard", "APRS: Europe, South Africa, Russia"),
+    Freq("2m", "aprs", 144.575, "R3", "standard", "APRS: New Zealand"),
+    Freq("2m", "aprs", 144.640, "R3", "standard", "APRS: Taiwan (China is also listed)"),
+    Freq("2m", "aprs", 144.660, "R3", "standard", "APRS: Japan"),
+    Freq("2m", "aprs", 145.175, "R3", "standard", "APRS: Australia"),
+    Freq("2m", "aprs", 145.825, "All", "standard", "APRS via the ISS and satellites (path ARISS), worldwide"),
     Freq("2m", "ft8", 144.174, "All", "standard", "FT8 calling (WSJT-X default)"),
     Freq("2m", "wspr", 144.489, "All", "standard", "WSPR, tones 144.4904-144.4906"),
     Freq("2m", "pumpkin", 144.490, "All", "proposed", "tones at 144.4915, 800 Hz above the WSPR window"),
@@ -84,8 +95,7 @@ PLAN = [
     Freq("70cm", "pumpkin", 432.310, "R2", "proposed", "beacon segment 432.300-432.400, 10 kHz above WSPR"),
     Freq("70cm", "pumpkin", 432.171, "All", "proposed", "weak-signal digital, just below FT8"),
     Freq("70cm", "ur", 432.310, "R2", "proposed", "beacon segment"),
-    Freq("70cm", "aprs", 433.800, "R1", "standard", "APRS, Europe (Region 1 only)"),
-    Freq("70cm", "aprs", 432.500, "R2", "proposed", "no Region 2 APRS standard; check local plan"),
+    Freq("70cm", "aprs", 432.500, "R1", "standard", "APRS on UHF: Europe (no Region 2 standard)"),
     Freq("70cm", "cucumber", 433.500, "R2", "proposed", "FM data in 433-435 links/digital; agree locally"),
     Freq("70cm", "cucumber", 446.100, "R2", "proposed", "FM simplex area near 446.000 calling; check local plan"),
 ]

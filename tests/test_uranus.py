@@ -368,6 +368,20 @@ class TestBandsRadiosSDR(unittest.TestCase):
         r.tune(144_174_000, "USB")
         self.assertEqual(sent, ["F 144174000", "M USB 0"])
 
+    def test_aprs_iss_frequency_uses_ariss_path(self):
+        from scipy.signal import resample_poly
+        from uranus import aprs_rx
+        import tempfile
+        t = open("config/uranus.toml", encoding="utf-8").read().replace('callsign = "N0CALL"', 'callsign = "8P5AB"', 1)
+        with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False, encoding="utf-8") as f:
+            f.write(t)
+        cfg, slots = scheduler.load_config(f.name)
+        r = scheduler.Runner(cfg, slots, None)
+        for mhz, path in ((145.825, ["ARISS"]), (144.390, ["WIDE1-1"])):
+            a, fs = r.audio_for(scheduler.Slot("2m", "aprs", mhz))
+            pkt = aprs_rx.parse_frame(aprs_rx.decode_audio(resample_poly(a, 1, 4), 12000)[0])
+            self.assertEqual(pkt["path"], path)
+
     def test_pskreporter_live_status(self):
         from uranus import pskreporter
         r = pskreporter.Reporter("8P5AB", "GK03", test=True)

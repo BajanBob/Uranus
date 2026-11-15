@@ -155,6 +155,8 @@ class Runner:
                                       st.get("aprs_symbol", "-"), st.get("aprs_comment", ""))
             src = f"{st['callsign']}-{st.get('aprs_ssid', 0)}" if st.get("aprs_ssid") else st["callsign"]
             path = tuple(p for p in st.get("aprs_path", "WIDE1-1,WIDE2-1").split(",") if p)
+            if abs(s.freq_mhz - 145.825) < 0.001:
+                path = ("ARISS",)            # ISS / satellite digipeaters answer only to ARISS
             return aprs.packet_audio(src, info, path=path), aprs.FS
         if s.mode == "ft8":
             return wsjt.ft8_audio(f"CQ {st['callsign']} {st['grid']}", off), wsjt.FS

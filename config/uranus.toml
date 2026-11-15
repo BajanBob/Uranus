@@ -96,6 +96,11 @@ active = true                # switch the whole band on/off (Station setup does 
   enabled = false            # enable only if permitted
 
   [[band.slot]]
+  mode = "aprs"
+  freq_mhz = 145.825
+  enabled = false            # ISS / satellite APRS digipeaters, worldwide. Only when a satellite is overhead.
+
+  [[band.slot]]
   mode = "ft8"
   freq_mhz = 144.174
 
