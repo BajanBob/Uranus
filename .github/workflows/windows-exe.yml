@@ -25,6 +25,30 @@ jobs:
       - name: Run tests
         run: python -m unittest -v tests.test_uranus
 
+      - name: Fetch Hamlib for Windows (bundled, so users install nothing)
+        shell: pwsh
+        run: |
+          $v = "4.7.2"
+          Invoke-WebRequest "https://github.com/Hamlib/Hamlib/releases/download/$v/hamlib-w64-$v.zip" -OutFile hamlib.zip
+          Expand-Archive hamlib.zip -DestinationPath hamlib_x -Force
+          $bin = (Get-ChildItem hamlib_x -Recurse -Filter rigctld.exe | Select-Object -First 1).DirectoryName
+          New-Item -ItemType Directory -Force hamlib | Out-Null
+          Copy-Item "$bin/*" hamlib/ -Recurse
+          $root = Split-Path $bin -Parent
+          Get-ChildItem $root -File | Where-Object { $_.Name -match '^(COPYING|LICENSE|README|AUTHORS)' } |
+            ForEach-Object { Copy-Item $_.FullName "hamlib/$($_.Name).txt" }
+          "Hamlib $v for Windows (64-bit), free software by the Hamlib project, LGPL-2.1 / GPL-2.0.`r`nUranus starts rigctld from this folder automatically.`r`nSource code: https://github.com/Hamlib/Hamlib/releases/tag/$v" | Set-Content hamlib/HAMLIB-SOURCE.txt
+          ./hamlib/rigctl.exe --version
+          ./hamlib/rigctl.exe -l | Select-String "IC-9100|IC-9700"
+
+      - name: Check every radio profile is in the bundled Hamlib
+        run: >
+          python -c "from uranus import radios, rigctl;
+          bad=[(p.name,p.hamlib_name) for p in radios.PROFILES if p.hamlib_name and not rigctl.model_for(p.hamlib_name)];
+          [print(p.name, '->', rigctl.model_for(p.hamlib_name)) for p in radios.PROFILES if p.hamlib_name];
+          assert rigctl.model_list().get('IC-9100') == 3068, rigctl.model_list().get('IC-9100');
+          assert not bad, bad; print('Hamlib models OK')"
+
       - name: GUI smoke test (faceplate, wizard, PSK panel, setup, chat)
         run: python tools/ci/gui_smoke.py
 
@@ -61,6 +85,7 @@ jobs:
           Copy-Item LICENSE "$pkg/LICENSE.txt"
           Copy-Item windows/README-WINDOWS.txt $pkg/
           Copy-Item windows/start-rigctld.bat $pkg/
+          Copy-Item hamlib "$pkg/hamlib" -Recurse
           Copy-Item dist/WhisperMite-Setup.exe "$pkg/WhisperMite/"
           Copy-Item tools/whispermite/README.md "$pkg/WhisperMite/"
           Compress-Archive -Path $pkg -DestinationPath "$pkg.zip" -Force
@@ -101,7 +126,7 @@ jobs:
             Windows: Uranus-Windows-exe.zip - unzip and double-click Uranus.exe (no Python needed).
             Raspberry Pi: Uranus-RaspberryPi.zip - unzip and run  bash linux/install-pi.sh
             Linux: Uranus-Linux.zip - unzip and run  bash linux/install-linux.sh
-            New in this version: modern faceplate, setup wizard, Icom IC-9100 USB Audio CODEC in the audio lists, live PSK Reporter panel.
+            New in this version: plug and play radio control. Hamlib is built in (hamlib folder) and starts by itself; no install, no model number. Press Test radio.
             Free software under GPL-3.0. Testers wanted worldwide: report results under Issues.
           files: |
             Uranus-Windows-exe.zip

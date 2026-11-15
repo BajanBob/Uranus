@@ -16,19 +16,18 @@ FROM SOURCE (needs Python):
 4. Double-click windows\plan.bat to see the transmit timeline.
 5. Double-click windows\pumpkin-demo.bat to watch the Pumpkin mode decode at -29 dB.
 
-GOING ON AIR
-- Install WSJT-X (provides ft8code.exe and wsprcode.exe for FT8/WSPR).
-  Uranus looks in C:\WSJT\wsjtx\bin automatically; otherwise set the
-  environment variable WSJTX_BIN to WSJT-X's bin folder.
-- Install Hamlib for Windows and add its bin folder to PATH.
-- Edit and run windows\start-rigctld.bat (rig model number + COM port).
-- Run windows\list-audio-devices.bat and put your rig's USB audio output
-  in audio_device in config\uranus.toml.
-- In config\uranus.toml set  backend = "hamlib".
+GOING ON AIR (plug and play)
+- Switch the radio on and plug in its USB cable (Icom: install Icom's USB driver once).
+- Run the Setup wizard and choose your radio, e.g. Icom IC-9100. The COM port,
+  CAT speed, Hamlib model and the radio's USB Audio CODEC are filled in for you.
+- Press Test radio. Uranus starts its built-in Hamlib (the hamlib folder next to
+  Uranus.exe) by itself and shows the radio's frequency. Nothing to install.
+- Install WSJT-X if you want FT8/WSPR slots (Uranus uses its ft8code/wsprcode).
 - Make sure Windows time is accurate to well under 1 second
   (Settings > Time & language > Sync now; better: install Meinberg NTP).
-  FT8, WSPR and Pumpkin will not decode with a wrong clock.
-- Double-click windows\run-on-air.bat.
+- Press Show plan, Dry run, then ON AIR.
+- Keep the hamlib folder next to Uranus.exe. Close WSJT-X, RS-BA1 or any other
+  program using the radio's COM port first: only one program can use it.
 
 Pumpkin needs a GPS-disciplined oscillator at BOTH stations (see docs\PUMPKIN-MODE.md).
 Check your licence before enabling APRS frequencies outside Region 2,

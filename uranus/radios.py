@@ -100,18 +100,12 @@ BY_NAME = {p.name: p for p in PROFILES}
 
 
 def find_hamlib_model(name):
-    """Look up a Hamlib model number by name in `rigctl -l`. Returns (number, line) or (None, reason)."""
-    import shutil
-    import subprocess
-    exe = shutil.which("rigctl")
-    if not exe:
-        return None, "rigctl not found: install Hamlib"
-    out = subprocess.run([exe, "-l"], capture_output=True, text=True, timeout=20).stdout
-    for line in out.splitlines():
-        parts = line.split()
-        if parts and parts[0].isdigit() and name.lower() in line.lower():
-            return int(parts[0]), line.strip()
-    return None, f"'{name}' not in rigctl -l"
+    """Hamlib model number for a radio name, using the bundled Hamlib. Returns (number, message)."""
+    from . import rigctl
+    if not rigctl.find_exe("rigctl") and name.upper() not in rigctl.KNOWN_MODELS:
+        return None, "Hamlib not found: keep the 'hamlib' folder next to Uranus.exe"
+    num = rigctl.model_for(name)
+    return (num, f"{name} is Hamlib model {num}") if num else (None, f"'{name}' not in Hamlib's list")
 
 
 def set_toml_key(text, section, key, value):

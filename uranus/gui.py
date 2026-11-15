@@ -278,6 +278,8 @@ class App(tk.Tk):
                 ("Setup wizard", self.wizard, "Accent", "Step-by-step: callsign and grid, radio (including the "
                  "Icom IC-9100), USB audio codec, CAT port, bands and PSK Reporter."),
                 ("Station setup", self.setup, None, "All radio, audio, CAT and band settings on one page."),
+                ("Test radio", self.test_radio, "Go", "Connect to the radio and read its frequency. Uranus "
+                 "starts its built-in Hamlib by itself: no install and no model number needed."),
                 ("Edit settings file", self.edit_config, None, "Open uranus.toml in a text editor for "
                  "everything else (timing, APRS details, frequencies)."),
             ]),
@@ -564,6 +566,8 @@ class App(tk.Tk):
                                 sd.get("sample_rate", 2_400_000), sd.get("offset_hz", 200_000),
                                 rc.get("max_tx_s", 320))
         else:
+            from . import rigctl
+            print(rigctl.ensure(cfg))
             radio = HamlibRadio(rc["rigctld_host"], rc["rigctld_port"],
                                 rc.get("audio_device", "default"), max_tx_s=rc.get("max_tx_s", 320))
         return scheduler.Runner(cfg, slots, radio)
@@ -578,7 +582,7 @@ class App(tk.Tk):
     def on_air(self):
         if not messagebox.askyesno(
                 "Transmit?", "Start transmitting with your settings?\n\n"
-                "Check: rigctld running, 'Transmit with' = hamlib, the radio's USB audio codec chosen, "
+                "Uranus connects to the radio by itself. Check: the radio is on and plugged in, "
                 "PC clock accurate, and every enabled frequency permitted by your licence."):
             return
 
@@ -609,6 +613,17 @@ class App(tk.Tk):
             self.set_state("busy", "Stopping after the current transmission or slot...")
         elif self.worker:
             self.set_state("busy", "Waiting for the current task to finish...")
+
+    def test_radio(self):
+        def go():
+            from . import rigctl
+            cfg = load_cfg()
+            if cfg.get("radio", {}).get("backend", "dry-run") != "hamlib":
+                print("Transmit with is 'dry-run': choose your radio in the Setup wizard first.")
+                return
+            print(rigctl.ensure(cfg))
+        self.print("\n> test radio\n")
+        self.start(go, "Connecting to the radio...")
 
     def setup(self):
         SetupWindow(self)
@@ -646,6 +661,8 @@ class App(tk.Tk):
         if self.reporter:
             self.reporter.stop.set()
             self.reporter.flush()
+        from . import rigctl
+        rigctl.stop()
         self.destroy()
 
 
@@ -732,7 +749,8 @@ class SetupWindow(tk.Toplevel):
         bfind = ttk.Button(mf, text="Find", command=self.find_model)
         bfind.pack(side="left", padx=4)
         Tooltip(bfind, "Look the selected radio up in Hamlib's list (rigctl -l) and fill in its model number.")
-        add("Hamlib model no.", mf, "Hamlib's number for your rig. Press Find, or run 'rigctl -l' and copy it.")
+        add("Hamlib model no.", mf, "Filled in automatically from the radio you chose (Hamlib is built into "
+                                    "Uranus). Leave it blank and Uranus looks it up when it connects.")
 
         self.ports = serial_ports()
         self.v["cat_port"] = tk.StringVar(value=port_label(rc.get("cat_port", ""), self.ports)
@@ -787,8 +805,8 @@ class SetupWindow(tk.Toplevel):
         for text, cmd, style, tip in [
                 ("Refresh devices", self.refresh, None, "Look again for COM ports and sound devices, e.g. after "
                                                         "switching the radio on or plugging in its USB cable."),
-                ("Start rigctld", self.start_rigctld, None, "Start Hamlib's rig server with the model, port and "
-                                                            "speed above."),
+                ("Test radio", self.test_radio, "Go", "Connect to the radio with the settings above and read "
+                                                      "its frequency. Hamlib is built in and starts by itself."),
                 ("Save", self.save, "Accent", "Write these choices into uranus.toml (other settings are kept)."),
                 ("Close", self.destroy, None, "Close without saving.")]:
             b = ttk.Button(bb, text=text, command=cmd, style=f"{style}.TButton" if style else "TButton")
@@ -881,24 +899,29 @@ class SetupWindow(tk.Toplevel):
             out.append(ln)
         return "".join(out)
 
-    def start_rigctld(self):
-        start_rigctld(self.app, self.v["hamlib_model"].get(), port_from_label(self.v["cat_port"].get()),
-                      self.v["cat_baud"].get(), self.cfg.get("radio", {}).get("rigctld_port", 4532))
+    def test_radio(self):
+        rc = dict(self.cfg.get("radio", {}), profile=self.v["profile"].get(),
+                  cat_port=port_from_label(self.v["cat_port"].get()), cat_baud=self.v["cat_baud"].get() or 19200)
+        if self.v["hamlib_model"].get().strip().isdigit():
+            rc["hamlib_model"] = int(self.v["hamlib_model"].get())
+        else:
+            rc.pop("hamlib_model", None)
+        test_radio_async(self, {"radio": rc}, lambda ok, msg: messagebox.showinfo(
+            "Test radio", msg, parent=self) if ok else messagebox.showerror("Test radio", msg, parent=self))
 
 
-def start_rigctld(app, model, port, baud, tcp_port=4532):
-    exe = shutil.which("rigctld")
-    if not exe:
-        messagebox.showerror("rigctld", "rigctld not found. Install Hamlib for Windows and add its bin "
-                                        "folder to your PATH.")
-        return False
-    model, port = str(model).strip(), str(port).strip()
-    if not (model.isdigit() and port):
-        messagebox.showerror("rigctld", "Set the Hamlib model number and CAT port first.")
-        return False
-    subprocess.Popen([exe, "-m", model, "-r", port, "-s", str(baud), "-t", str(tcp_port)])
-    app.print(f"Started rigctld -m {model} -r {port} -s {baud} -t {tcp_port}\n")
-    return True
+def test_radio_async(widget, cfg, done):
+    """Run rigctl.ensure in the background and call done(ok, message) on the Tk thread."""
+    from . import rigctl
+    rigctl.stop()                                   # restart with the settings being tested
+
+    def go():
+        try:
+            ok, msg = True, rigctl.ensure(cfg)
+        except Exception as e:                      # noqa: BLE001
+            ok, msg = False, str(e)
+        widget.after(0, lambda: done(ok, msg))
+    threading.Thread(target=go, daemon=True).start()
 
 
 # --------------------------------------------------------------------- setup wizard
@@ -1025,10 +1048,11 @@ class SetupWizard(tk.Toplevel):
             if not re.fullmatch(r"[A-Ra-r]{2}\d{2}([A-Xa-x]{2})?", self.v["grid"].get().strip()):
                 return "Grid square: 4 or 6 characters, e.g. GK03 or GK03ec."
         if i == 2 and self.v["backend"].get() == "hamlib":
-            if not self.v["model"].get().strip().isdigit():
-                return "Enter the Hamlib model number (press Find), or choose 'dry-run' for now."
+            p = self.radios.BY_NAME[self.v["profile"].get()]
+            if not self.v["model"].get().strip().isdigit() and not p.hamlib_name:
+                return "This radio needs a Hamlib model number, or choose 'dry-run' for now."
             if not port_from_label(self.v["port"].get()):
-                return "Choose the radio's COM port, or choose 'dry-run' for now."
+                return "No COM port: switch the radio on, plug in its USB cable and press Refresh."
         return True
 
     # ---------------------------------------------------------- pages
@@ -1089,13 +1113,17 @@ class SetupWizard(tk.Toplevel):
             b.pack(side="left", padx=6)
             Tooltip(b, "Look your radio up in Hamlib's list (needs Hamlib installed).")
             return fr
-        self._field(self.body, "Hamlib model no.", model_row, "Hamlib's number for your radio. Press Find.")
+        self._field(self.body, "Hamlib model (auto)", model_row, "Filled in for you from the radio you chose: "
+                    "Hamlib is built into Uranus. You only need to type a number for a 'Generic CAT rig'.")
+        if not self.v["model"].get().strip() and p.hamlib_name:
+            from . import rigctl
+            n = rigctl.model_for(p.hamlib_name)
+            if n:
+                self.v["model"].set(str(n))
         ports = serial_ports()
-        if not self.v["port"].get() and ports:
-            cp = next((x for x in ports if "cp210" in x.lower() or "silicon labs" in x.lower()), ports[0])
-            self.v["port"].set(cp)
-        else:
-            self.v["port"].set(port_label(port_from_label(self.v["port"].get()), ports))
+        from . import rigctl
+        best = rigctl.detect_port(port_from_label(self.v["port"].get()))
+        self.v["port"].set(port_label(best, ports) if best else "")
         self.w_port = self._field(self.body, "CAT port",
                                   lambda q: ttk.Combobox(q, textvariable=self.v["port"], values=ports, width=46),
                                   "The radio's control port. The IC-9100 appears as 'Silicon Labs CP210x USB to "
@@ -1116,11 +1144,13 @@ class SetupWizard(tk.Toplevel):
         bar = ttk.Frame(self.body)
         bar.pack(fill="x", pady=(10, 0))
         for text, cmd, tip in [("Refresh", self._refresh, "Look again for COM ports and sound devices."),
-                               ("Start rigctld", self._rigctld, "Start Hamlib's rig server now, so the radio can be "
-                                                                "controlled.")]:
+                               ("Test radio", self._test, "Connect to the radio now and read its frequency. "
+                                                          "Hamlib is built in: nothing to install.")]:
             b = ttk.Button(bar, text=text, command=cmd)
             b.pack(side="left", padx=(0, 8))
             Tooltip(b, tip)
+        self.test_note = self._note("Press Test radio to check the connection. Uranus starts its built-in "
+                                    "Hamlib by itself: there is nothing else to install.", C["muted"])
         codec = self.ad.best_codec("out")
         if p.usb_audio == "built-in":
             self._note(("✔ Radio USB codec found: " + self.ad.spec_from_label(codec)) if codec else
@@ -1151,9 +1181,19 @@ class SetupWizard(tk.Toplevel):
         else:
             messagebox.showinfo("Hamlib", msg, parent=self)
 
-    def _rigctld(self):
-        start_rigctld(self.app, self.v["model"].get(), port_from_label(self.v["port"].get()), self.v["baud"].get(),
-                      self.cfg.get("radio", {}).get("rigctld_port", 4532))
+    def _test(self):
+        rc = dict(self.cfg.get("radio", {}), profile=self.v["profile"].get(),
+                  cat_port=port_from_label(self.v["port"].get()), cat_baud=self.v["baud"].get() or 19200)
+        if self.v["model"].get().strip().isdigit():
+            rc["hamlib_model"] = int(self.v["model"].get())
+        else:
+            rc.pop("hamlib_model", None)
+        self.test_note.config(text="Connecting to the radio...", fg=C["amber"])
+
+        def done(ok, msg):
+            if self.winfo_exists() and self.test_note.winfo_exists():
+                self.test_note.config(text=("✔ " if ok else "✖ ") + msg, fg=C["green"] if ok else C["red"])
+        test_radio_async(self, {"radio": rc}, done)
 
     def p_bands(self):
         p = self.radios.BY_NAME[self.v["profile"].get()]
@@ -1374,6 +1414,8 @@ class ChatWindow(tk.Toplevel):
                 sd = cfg.get("sdr", {})
                 radio = HackRFRadio(sd.get("hackrf_txvga", 10), sd.get("hackrf_amp", False))
             else:
+                from . import rigctl
+                self.say(rigctl.ensure(cfg) + "\n", "info")
                 radio = HamlibRadio(rc["rigctld_host"], rc["rigctld_port"], rc.get("audio_device", "default"))
             self.engine = self.chatmod.ChatEngine(cfg, radio, self.v_sub.get(), freq,
                                                   0 if self.v_slot.get() == "even" else 1, self.on_event)

@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 out/
 *.wav
+hamlib/
+hamlib_x/
+hamlib.zip

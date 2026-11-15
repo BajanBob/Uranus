@@ -1,3 +1,5 @@
+import os
+import sys
 import unittest
 
 import numpy as np
@@ -245,6 +247,59 @@ class TestBandsRadiosSDR(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             a.resolve("USB Audio CODEC", "out", devs[:1])
         self.assertIn("Icom IC-9100", [p.name for p in __import__("uranus.radios").radios.PROFILES])
+
+    @unittest.skipIf(os.name == "nt", "uses shell-script stand-ins for Hamlib")
+    def test_plug_and_play_rigctld(self):
+        """ensure() finds Hamlib, looks up the IC-9100 model, picks the CP210x port, starts rigctld
+        and reads the frequency, all without a model number in the settings."""
+        import socket
+        import tempfile
+        import textwrap
+        from uranus import rigctl
+        d = tempfile.mkdtemp()
+        with open(os.path.join(d, "rigctl"), "w") as f:
+            f.write("#!/bin/sh\necho ' Rig #  Mfg    Model     Version'\n"
+                    "echo '  3068  Icom   IC-9100   20220909.0  Stable  RIG_MODEL_IC9100'\n"
+                    "echo '  3081  Icom   IC-9700   20230109.0  Stable  RIG_MODEL_IC9700'\n")
+        srv = textwrap.dedent(f"""
+            import socket, sys
+            args = sys.argv[1:]
+            open({os.path.join(d, 'args')!r}, 'w').write(' '.join(args))
+            s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind(('127.0.0.1', int(args[args.index('-t') + 1]))); s.listen()
+            while True:
+                c, _ = s.accept(); f = c.makefile('rw')
+                for line in f:
+                    f.write('144300000\\n' if line.strip() == 'f' else 'RPRT 0\\n'); f.flush()
+                c.close()
+            """)
+        with open(os.path.join(d, "fake_rigctld.py"), "w") as f:
+            f.write(srv)
+        with open(os.path.join(d, "rigctld"), "w") as f:
+            f.write(f"#!/bin/sh\nexec {sys.executable} {os.path.join(d, 'fake_rigctld.py')} \"$@\"\n")
+        for n in ("rigctl", "rigctld"):
+            os.chmod(os.path.join(d, n), 0o755)
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            tport = s.getsockname()[1]
+        os.environ["URANUS_HAMLIB_DIR"] = d
+        try:
+            self.assertEqual(rigctl.model_for("IC-9100"), 3068)
+            ports = [("COM4", "Bluetooth link"), ("COM3", "Silicon Labs CP210x USB to UART Bridge (COM3)")]
+            self.assertEqual(rigctl.detect_port("", ports), "COM3")
+            self.assertEqual(rigctl.detect_port("COM4", ports), "COM4")
+            orig = rigctl.detect_port
+            rigctl.detect_port = lambda pref="", ports=None: orig(pref, [("/dev/ttyUSB0", "CP2102 USB to UART")])
+            try:
+                msg = rigctl.ensure({"radio": {"profile": "Icom IC-9100", "rigctld_port": tport, "cat_baud": 19200}})
+            finally:
+                rigctl.detect_port = orig
+            self.assertIn("144.3000 MHz", msg)
+            self.assertEqual(open(os.path.join(d, "args")).read().split()[:6],
+                             ["-m", "3068", "-r", "/dev/ttyUSB0", "-s", "19200"])
+        finally:
+            rigctl.stop()
+            del os.environ["URANUS_HAMLIB_DIR"]
 
     def test_pskreporter_live_status(self):
         from uranus import pskreporter
