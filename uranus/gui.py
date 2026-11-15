@@ -118,6 +118,11 @@ def apply_theme(root):
                                ("Info", C["blue"], C["dark"]), ("Go", C["green"], C["dark"])):
         st.configure(f"{name}.TButton", background=colour, foreground=text, font=(UI, 10, "bold"))
         st.map(f"{name}.TButton", background=[("active", colour), ("pressed", colour)])
+    for name, base in (("Side", "TButton"), ("SideAccent", "Accent.TButton"), ("SideDanger", "Danger.TButton"),
+                       ("SideInfo", "Info.TButton"), ("SideGo", "Go.TButton")):
+        st.configure(f"{name}.TButton", **{k: st.lookup(base, k) for k in ("background", "foreground", "font")
+                                          if st.lookup(base, k)}, padding=(12, 5), anchor="w")
+        st.map(f"{name}.TButton", background=st.map(base, "background"), foreground=st.map(base, "foreground"))
     st.configure("TCheckbutton", background=C["bg"], foreground=C["ink"])
     st.map("TCheckbutton", background=[("active", C["bg"])], indicatorcolor=[("selected", C["orange"])])
     st.configure("Card.TCheckbutton", background=C["panel"], foreground=C["ink"], font=(UI, 10, "bold"))
@@ -200,8 +205,14 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(f"Uranus {__version__}")
-        self.geometry("1220x860")
-        self.minsize(1040, 720)
+        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        self.geometry(f"{min(1220, sw - 20)}x{min(860, sh - 80)}+0+0")
+        self.minsize(min(1000, sw - 40), min(640, sh - 100))
+        if sh < 900 and os.name == "nt":
+            try:
+                self.state("zoomed")         # small or scaled screens: use the whole screen
+            except tk.TclError:
+                pass
         apply_theme(self)
         self.q = queue.Queue()
         self.runner = None
@@ -322,10 +333,10 @@ class App(tk.Tk):
             ]),
         ]
         for title, items in groups:
-            ttk.Label(side, text=title, style="Section.TLabel").pack(anchor="w", pady=(10, 4))
+            ttk.Label(side, text=title, style="Section.TLabel").pack(anchor="w", pady=(8, 3))
             for text, cmd, style, tip in items:
-                b = ttk.Button(side, text=text, command=cmd, style=f"{style}.TButton" if style else "TButton")
-                b.pack(fill="x", pady=2)
+                b = ttk.Button(side, text=text, command=cmd, style=f"Side{style or ''}.TButton")
+                b.pack(fill="x", pady=1)
                 Tooltip(b, tip)
 
     def _card(self, parent, title):
