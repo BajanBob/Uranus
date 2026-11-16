@@ -1,6 +1,7 @@
 import os
 import sys
 import tomllib
+import time
 import unittest
 
 import numpy as np
@@ -469,6 +470,66 @@ class TestBandsRadiosSDR(unittest.TestCase):
         self.assertEqual((r.max_swr, r.max_tx_s, r.data_mode), (2.5, 320, True))
         with um.patch("socket.create_connection"), um.patch("uranus.radio._pick_player"):
             self.assertEqual(HamlibRadio.from_config({}).max_swr, 2.0)
+
+    def test_timetable_cycle_and_hours(self):
+        from uranus import timetable as tt
+        sc = tt.settings({"schedule": {"mode": "cycle", "tx_minutes": 30, "listen_minutes": 180}})
+        self.assertEqual(tt.phase_at(sc, 1000.0, 1000.0), ("tx", 1000.0 + 1800))
+        self.assertEqual(tt.phase_at(sc, 1000.0 + 1800, 1000.0), ("listen", 1000.0 + 1800 + 10800))
+        self.assertEqual(tt.phase_at(sc, 1000.0 + 12600 + 5, 1000.0)[0], "tx")      # repeats
+        self.assertEqual([tt.label(m) for m in tt.CHOICES], ["30 min", "3 h", "6 h", "9 h", "12 h", "24 h"])
+        self.assertEqual(tt.minutes_of("9 h"), 540)
+        sc = tt.settings({"schedule": {"mode": "hours", "tx_hours": [8, 9], "listen_hours": [10, 11, 12],
+                                       "clock": "utc"}})
+        day = 1_700_006_400                                    # 00:00 UTC
+        self.assertEqual(time.gmtime(day).tm_hour, 0)
+        self.assertEqual(tt.phase_at(sc, day + 8.5 * 3600, day), ("tx", day + 10 * 3600))
+        self.assertEqual(tt.phase_at(sc, day + 10 * 3600, day), ("listen", day + 13 * 3600))
+        self.assertEqual(tt.phase_at(sc, day + 14 * 3600, day), ("off", day + 32 * 3600))
+        self.assertEqual(tt.phase_at(tt.settings({}), day, day), ("tx", None))
+
+    def test_session_alternates_transmit_and_listen(self):
+        from uranus import timetable as tt
+        calls = []
+
+        class FakeRunner:
+            def __init__(self):
+                import threading
+                self.stop = threading.Event()
+
+            def run(self, until=None):
+                calls.append(("tx", round(until - time.time())))
+
+        class FakeListener:
+            stop = None
+
+            def run(self, until=None):
+                calls.append(("listen", round(until - time.time())))
+
+        cfg = {"station": {"callsign": "8P5AB", "grid": "GK03"}, "receive": {"dial_mhz": 14.074, "mode": "ft8"},
+               "schedule": {"mode": "cycle", "tx_minutes": 30, "listen_minutes": 180}}
+
+        class Rig:
+            tuned = []
+
+            def tune(self, hz, mode):
+                self.tuned.append((hz, mode))
+        sess = scheduler.Session.__new__(scheduler.Session)
+        sess.cfg, sess.radio, sess.sc = cfg, Rig(), tt.settings(cfg)
+        sess.runner = FakeRunner()
+        sess.stop = sess.runner.stop
+        sess.on_event, sess.reporter, sess.listen_in_gaps = None, None, True
+        sess.listener_factory = FakeListener
+        sess.stop.wait = lambda s: None                        # don't really wait between phases
+        tt_phase = tt.phase_at
+        seq = iter([("tx", time.time() + 1800), ("listen", time.time() + 10800), ("tx", time.time() + 1800)])
+        tt.phase_at = lambda sc, t, start: next(seq)
+        try:
+            sess.run(max_phases=3)
+        finally:
+            tt.phase_at = tt_phase
+        self.assertEqual([c[0] for c in calls], ["tx", "listen", "tx"])
+        self.assertEqual(Rig.tuned, [(14_074_000.0, "USB")])
 
     def test_aprs_iss_frequency_uses_ariss_path(self):
         from scipy.signal import resample_poly

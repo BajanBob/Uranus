@@ -167,10 +167,29 @@ w.v["band_1.25m"].set(True)
 w.v["call"].set("8P5AB")
 w.v["grid"].set("GK03ec")
 w.v["cat_baud"].set("19200")
+w.v["band_20m"].set(True)                   # HF bands are in Station setup now
 assert w.save() is True
 assert g.load_cfg()["radio"]["cat_baud"] == 19200
+assert [b for b in g.load_cfg()["band"] if b["name"] == "20m"][0]["active"] is True
 snap(w, "4-station-setup.png")
 w.destroy()
+sw = g.ScheduleWindow(a)
+sw.geometry("+60+40")
+sw.v_mode.set("cycle")
+sw.v_tx.set("30 min")
+sw.v_rx.set("3 h")
+sw._update()
+assert sw.save() is True
+assert g.load_cfg()["schedule"]["listen_minutes"] == 180
+sw.v_mode.set("hours")
+sw._update()
+sw._fill(sw.v_txh, range(8, 20))
+sw._fill(sw.v_rxh, list(range(0, 8)) + list(range(20, 24)))
+assert sw.save() is True
+sched = g.load_cfg()["schedule"]
+assert sched["mode"] == "hours" and sched["tx_hours"] == list(range(8, 20)), sched
+snap(sw, "7-schedule.png")
+sw.destroy()
 c = g.ChatWindow(a)
 c.v_text.set("test")
 c.estimate()

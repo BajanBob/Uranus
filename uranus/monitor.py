@@ -62,6 +62,18 @@ def record(seconds, device="default", fs=FS):
     return x
 
 
+def receive_rig_mode(rx):
+    """Rig mode for listening with the [receive] settings: FM for VHF APRS / Cucumber, else USB."""
+    d = float(rx.get("dial_mhz", 144.49))
+    if d < 30.0:
+        return "USB"                                  # HF: APRS is 300 baud on USB
+    if rx.get("mode") == "auto":
+        from . import freqplan
+        fm = any(o.mode in ("aprs", "cucumber") and abs(o.mhz - d) < 0.002 for o in freqplan.PLAN)
+        return "FM" if fm else "USB"
+    return "FM" if rx.get("mode") in ("cucumber", "aprs") else "USB"
+
+
 class Listener:
     def __init__(self, cfg, reporter=None, spot_path=spots.DEFAULT_PATH, on_event=None):
         st, rx = cfg["station"], cfg.get("receive", {})

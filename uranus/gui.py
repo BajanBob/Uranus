@@ -190,6 +190,7 @@ STATES = {                       # lamp colour, label
     "air": (C["amber"], "ON AIR"),          # beacon session running, waiting for the next slot
     "tx": (C["red"], "TRANSMITTING"),       # PTT keyed right now
     "listen": (C["lilac"], "LISTENING"),
+    "off": (C["muted"], "PAUSED"),          # timetable: neither transmitting nor listening this hour
     "ok": (C["green"], "READY"),
 }
 
@@ -434,6 +435,8 @@ class App(tk.Tk):
                  "everything else (timing, APRS details, frequencies)."),
             ]),
             ("OPERATE", [
+                ("Schedule", self.schedule, None, "When to transmit and when only to listen and decode: all the "
+                 "time, taking turns (30 min to 24 h each), or by the hour."),
                 ("ON AIR", self.on_air, "Danger", "Start the transmit schedule on your radio. Asks first."),
                 ("Listen + decode", self.listen, "Info", "Decode Pumpkin, UR or Cucumber from the radio every "
                  "slot, log who you hear and, if live upload is on, send the spots to PSK Reporter."),
@@ -645,7 +648,7 @@ class App(tk.Tk):
                 t = e["type"]
                 if t == "gap_end":
                     self.dec = {"type": "idle"}
-                elif t in ("tx_start", "tx_end", "swr_trip", "swr_stop"):
+                elif t in ("tx_start", "tx_end", "swr_trip", "swr_stop", "phase"):
                     self.on_tx_event(e)
                 elif t in ("waiting", "recording", "decoding", "result"):
                     self.dec = e
@@ -672,6 +675,17 @@ class App(tk.Tk):
     def on_tx_event(self, e):
         """Red light while the PTT is keyed; blue (listening) or amber (waiting) in between."""
         t, dry = e["type"], self.state == "dry"
+        if t == "phase":
+            end = e.get("until")
+            when = time.strftime("%H:%M", time.localtime(end)) if end else ""
+            if e["phase"] == "tx":
+                self.set_state("air", "Transmit phase" + (f" until {when}" if when else "") + ". Press Stop to end.")
+            elif e["phase"] == "listen":
+                self.set_state("listen", f"Listening and decoding only, until {when}. Press Stop to end.")
+                self.dec = {"type": "idle"}
+            else:
+                self.set_state("off", f"Paused until {when} (no transmit or listen hours). Press Stop to end.")
+            return
         if t == "tx_start":
             if not dry:
                 self.set_state("tx", f"Transmitting {e['mode'].upper()} on {e['freq_mhz']:.4f} MHz "
@@ -1209,13 +1223,15 @@ class App(tk.Tk):
         self.start(go, "Dry run in progress — nothing is transmitted. Press Stop to end.", "dry")
 
     def on_air(self):
-        from . import scheduler
+        from . import scheduler, timetable
         try:
-            _, slots = scheduler.load_config(CONFIG)
+            cfg, slots = scheduler.load_config(CONFIG)
         except Exception as e:              # noqa: BLE001
             messagebox.showerror("ON AIR", f"Could not read settings:\n{e}", parent=self)
             return
-        if not scheduler.bands_of(slots):
+        sc = timetable.settings(cfg)
+        listen_only = sc["mode"] == "hours" and sc["listen_hours"] and not sc["tx_hours"]
+        if not scheduler.bands_of(slots) and not listen_only:
             messagebox.showinfo(
                 "Nothing to transmit",
                 "No band and mode is ticked for transmitting yet.\n\n"
@@ -1227,6 +1243,7 @@ class App(tk.Tk):
             return
         if not messagebox.askyesno(
                 "Transmit?", "Start transmitting with your settings?\n\n"
+                f"Schedule: {timetable.describe(sc)}.\n\n"
                 "Uranus connects to the radio by itself. Check: the radio is on and plugged in, "
                 "PC clock accurate, and every enabled frequency permitted by your licence."):
             return
@@ -1234,11 +1251,18 @@ class App(tk.Tk):
         if self.v_psk.get() and not self.reporter:
             self.reporter = self._make_reporter()
 
+        if hasattr(self, "v_sub"):
+            self.save_listen()               # listen-only phases use the Decode and Dial boxes
+
         def go():
-            self.runner = self._runner(False)
-            self.runner.run()
-        self.print("\n> ON AIR: transmitting on schedule and decoding on each frequency between "
-                   "transmissions\n")
+            runner = self._runner(False)
+            sess = scheduler.Session(runner.cfg, runner.slots, runner.radio)
+            sess.runner, sess.stop = runner, runner.stop
+            sess.on_event, sess.reporter = self.on_listen_event, self.reporter
+            sess.listen_in_gaps = runner.listen_in_gaps
+            self.runner = sess
+            sess.run()
+        self.print(f"\n> ON AIR: {timetable.describe(sc)}\n")
         self.start(go, "Transmitting on schedule. Press Stop to end.", "air")
 
     def listen(self):
@@ -1258,14 +1282,7 @@ class App(tk.Tk):
                     from . import rigctl
                     from .radio import HamlibRadio
                     print(rigctl.ensure(cfg))
-                    rig_mode = "FM" if rx.get("mode") in ("cucumber", "aprs") else "USB"
-                    if rx.get("mode") == "auto":
-                        from . import freqplan
-                        d = float(rx.get("dial_mhz", 144.49))
-                        fm = any(o.mode in ("aprs", "cucumber") and abs(o.mhz - d) < 0.002 for o in freqplan.PLAN)
-                        rig_mode = "FM" if fm and d >= 30 else "USB"
-                    if float(rx.get("dial_mhz", 144.49)) < 30.0:
-                        rig_mode = "USB"                       # HF: APRS is 300 baud on USB
+                    rig_mode = monitor.receive_rig_mode(rx)
                     r = HamlibRadio.from_config(rc)
                     r.tune(float(rx.get("dial_mhz", 144.49)) * 1e6, rig_mode)
                     r.sock.close()
@@ -1321,6 +1338,9 @@ class App(tk.Tk):
 
     def bands_modes(self):
         BandsModesWindow(self)
+
+    def schedule(self):
+        ScheduleWindow(self)
 
     def setup(self):
         SetupWindow(self)
@@ -1404,6 +1424,136 @@ def station_keys(call, grid):
     if g6:
         ch[("station", "grid6")] = g6
     return ch
+
+
+class ScheduleWindow(tk.Toplevel):
+    """When to transmit and when only to listen: continuous, taking turns, or by the hour."""
+
+    def __init__(self, app):
+        super().__init__(app)
+        from . import timetable
+        self.app, self.tt = app, timetable
+        self.title("Uranus - Schedule")
+        self.configure(bg=C["bg"])
+        self.resizable(False, False)
+        try:
+            sc = timetable.settings(load_cfg())
+        except Exception as e:              # noqa: BLE001
+            messagebox.showerror("Schedule", f"Could not read settings:\n{e}", parent=self)
+            self.destroy()
+            return
+        f = ttk.Frame(self, padding=(18, 14))
+        f.pack(fill="both", expand=True)
+        ttk.Label(f, text="Schedule", style="Big.TLabel").pack(anchor="w")
+        ttk.Label(f, text="Choose when ON AIR transmits and when it only listens and decodes. Listen-only time "
+                          "uses the Decode and Dial boxes on the main window (e.g. FT8 on 14.074).",
+                  style="Muted.TLabel", wraplength=720).pack(anchor="w", pady=(2, 10))
+        self.v_mode = tk.StringVar(value=sc["mode"])
+        choices = [x for x in (self.tt.label(m) for m in timetable.CHOICES)]
+
+        def section(value, text, tip):
+            r = ttk.Radiobutton(f, text=text, value=value, variable=self.v_mode, command=self._update)
+            r.pack(anchor="w", pady=(8, 2))
+            Tooltip(r, tip)
+            box = ttk.Frame(f, padding=(26, 0, 0, 0))
+            box.pack(anchor="w", fill="x")
+            return box
+        section("continuous", "Transmit all the time (decoding between transmissions)",
+                "The beacon cycles through your ticked bands and modes without stopping, and decodes on the same "
+                "frequency in the gaps between its own transmissions.")
+        box = section("cycle", "Take turns: transmit, then listen and decode",
+                      "Transmit for the first period, then only listen and decode for the second, and repeat, "
+                      "starting from when you press ON AIR.")
+        self.v_tx = tk.StringVar(value=self.tt.label(sc["tx_minutes"]))
+        self.v_rx = tk.StringVar(value=self.tt.label(sc["listen_minutes"]))
+        ttk.Label(box, text="Transmit for").pack(side="left")
+        self.cb_tx = ttk.Combobox(box, textvariable=self.v_tx, values=choices, state="readonly", width=8)
+        self.cb_tx.pack(side="left", padx=(6, 14))
+        ttk.Label(box, text="then listen and decode for").pack(side="left")
+        self.cb_rx = ttk.Combobox(box, textvariable=self.v_rx, values=choices, state="readonly", width=8)
+        self.cb_rx.pack(side="left", padx=6)
+
+        box = section("hours", "By the hour: choose the hours to transmit and the hours to listen",
+                      "Tick the hours of the day. Transmit hours also decode between transmissions; listen hours "
+                      "only decode; hours with neither ticked are paused. An hour ticked in both rows transmits.")
+        grid = tk.Frame(box, bg=C["bg"])
+        grid.pack(anchor="w", pady=(4, 0))
+        self.v_txh, self.v_rxh, self.hour_widgets = {}, {}, []
+        tk.Label(grid, text="", bg=C["bg"]).grid(row=0, column=0)
+        for h in range(24):
+            tk.Label(grid, text=f"{h:02d}", bg=C["bg"], fg=C["muted"], font=(MONO, 8)).grid(row=0, column=h + 1)
+        for row, (name, store, hours, colour) in enumerate((("Transmit", self.v_txh, sc["tx_hours"], C["red"]),
+                                                           ("Listen", self.v_rxh, sc["listen_hours"], C["lilac"])), 1):
+            tk.Label(grid, text=name, bg=C["bg"], fg=colour, font=(UI, 9, "bold"), anchor="e", width=8).grid(
+                row=row, column=0, sticky="e", padx=(0, 4))
+            for h in range(24):
+                store[h] = tk.BooleanVar(value=h in hours)
+                c = tk.Checkbutton(grid, variable=store[h], bg=C["bg"], activebackground=C["bg"],
+                                   selectcolor=C["panel2"], fg=colour, highlightthickness=0, bd=0)
+                c.grid(row=row, column=h + 1)
+                self.hour_widgets.append(c)
+        qb = ttk.Frame(box)
+        qb.pack(anchor="w", pady=(6, 0))
+        for text, cmd in (("Listen all day", lambda: self._fill(self.v_rxh, range(24))),
+                          ("Transmit 08-20, listen the rest",
+                           lambda: (self._fill(self.v_txh, range(8, 20)), self._fill(self.v_rxh, list(range(0, 8))
+                                                                                       + list(range(20, 24))))),
+                          ("Clear", lambda: (self._fill(self.v_txh, []), self._fill(self.v_rxh, [])))):
+            b = ttk.Button(qb, text=text, command=cmd, style="Side.TButton")
+            b.pack(side="left", padx=(0, 6))
+            self.hour_widgets.append(b)
+        self.v_clock = tk.StringVar(value="UTC" if sc["clock"] == "utc" else "Local time")
+        ttk.Label(qb, text="   Hours in").pack(side="left")
+        self.cb_clock = ttk.Combobox(qb, textvariable=self.v_clock, values=["Local time", "UTC"], state="readonly",
+                                     width=10)
+        self.cb_clock.pack(side="left", padx=6)
+        Tooltip(self.cb_clock, "Local time follows this PC's clock (Barbados is UTC-4). UTC matches the FT8 and "
+                               "WSPR world.")
+        bb = ttk.Frame(f)
+        bb.pack(fill="x", pady=(16, 0))
+        ttk.Button(bb, text="Save", style="Accent.TButton", command=self.save).pack(side="left")
+        ttk.Button(bb, text="Close", command=self.destroy).pack(side="left", padx=8)
+        self.summary = ttk.Label(bb, text="", style="Muted.TLabel")
+        self.summary.pack(side="left", padx=8)
+        self._update()
+
+    @staticmethod
+    def _fill(store, hours):
+        hours = set(hours)
+        for h, v in store.items():
+            v.set(h in hours)
+
+    def _update(self):
+        mode = self.v_mode.get()
+        for w in (self.cb_tx, self.cb_rx):
+            w.config(state="readonly" if mode == "cycle" else "disabled")
+        for w in self.hour_widgets + [self.cb_clock]:
+            try:
+                w.config(state=("readonly" if w is self.cb_clock else "normal") if mode == "hours" else "disabled")
+            except tk.TclError:
+                pass
+
+    def values(self):
+        return {"mode": self.v_mode.get(), "tx_minutes": self.tt.minutes_of(self.v_tx.get()),
+                "listen_minutes": self.tt.minutes_of(self.v_rx.get()),
+                "tx_hours": [h for h, v in self.v_txh.items() if v.get()],
+                "listen_hours": [h for h, v in self.v_rxh.items() if v.get()],
+                "clock": "utc" if self.v_clock.get() == "UTC" else "local"}
+
+    def save(self):
+        v = self.values()
+        if v["mode"] == "hours" and not (v["tx_hours"] or v["listen_hours"]):
+            messagebox.showerror("Schedule", "Tick at least one transmit or listen hour.", parent=self)
+            return False
+        err = write_keys({("schedule", k): val for k, val in v.items()})
+        if err:
+            messagebox.showerror("Schedule", err, parent=self)
+            return False
+        text = self.tt.describe(v)
+        self.summary.config(text="✔ Saved")
+        self.app.print(f"\nSchedule saved: {text}\n")
+        self.app.set_state("ok", f"Schedule: {text}. Press ON AIR to start.")
+        return True
 
 
 class SetupWindow(tk.Toplevel):
@@ -1509,20 +1659,29 @@ class SetupWindow(tk.Toplevel):
             "audio: the rig (or SDR software) through a sound input.\nrtl_fm: an RTL-SDR dongle directly.")
 
         bf = ttk.Frame(f)
+        from .freqplan import BAND_NAMES
         active = {b["name"]: b.get("active", True) for b in self.cfg.get("band", [])}
+        self.band_names = [b["name"] for b in self.cfg.get("band", [])]
         band_tips = {"2m": "144-148 MHz. APRS 144.390, FT8 144.174, WSPR 144.490, Pumpkin.",
                      "1.25m": "222-225 MHz (220 MHz band). ITU Region 2 only; check your licence. "
                               "Needs a transverter, a tri-band FM rig or an SDR. Not on the IC-9100.",
-                     "70cm": "420-450 MHz. FT8 432.174, WSPR 432.300, Pumpkin."}
-        for b in ("2m", "1.25m", "70cm"):
-            self.v["band_" + b] = tk.BooleanVar(value=bool(active.get(b, False)))
-            c = ttk.Checkbutton(bf, text={"2m": "2 m", "1.25m": "1.25 m (220)", "70cm": "70 cm"}[b],
-                                variable=self.v["band_" + b])
-            c.pack(side="left", padx=(0, 12))
-            Tooltip(c, band_tips[b])
-        add("VHF/UHF beacon bands", bf, "VHF/UHF bands the beacon cycles through. HF bands (20 m and so on) "
-                                        "are ticked in 'Bands and modes'. Frequencies you disabled for "
-                                        "licensing reasons stay disabled.")
+                     "70cm": "420-450 MHz. FT8 432.174, WSPR 432.300, Pumpkin.",
+                     "20m": "14.000-14.350 MHz. FT8 14.074, FT4 14.080, WSPR 14.0956, HF APRS 14.1016."}
+        vhf = [b for b in self.band_names if b in ("2m", "1.25m", "70cm")]
+        hf = [b for b in self.band_names if b not in vhf]
+        for r, names in enumerate((vhf, hf[:6], hf[6:])):
+            line = ttk.Frame(bf)
+            line.pack(anchor="w")
+            for b in names:
+                self.v["band_" + b] = tk.BooleanVar(value=bool(active.get(b, False)))
+                c = ttk.Checkbutton(line, text=BAND_NAMES.get(b, b).replace("1.25 m", "1.25 m (220)"),
+                                    variable=self.v["band_" + b], width=10)
+                c.pack(side="left")
+                Tooltip(c, band_tips.get(b, "Tick to transmit on this band. Choose its modes and frequencies in "
+                                            "'Bands and modes'."))
+        add("Bands to transmit on", bf, "Bands the beacon cycles through, VHF/UHF and HF. Choose each band's modes "
+                                        "and frequencies in 'Bands and modes'. Listening doesn't need any band "
+                                        "ticked. Frequencies you disabled for licensing reasons stay disabled.")
 
         lo = next((b.get("transverter_lo_mhz", 0.0) for b in self.cfg.get("band", []) if b["name"] == "1.25m"), 0.0)
         self.v["lo"] = tk.StringVar(value=str(lo))
@@ -1642,7 +1801,7 @@ class SetupWindow(tk.Toplevel):
               ("sdr", "hackrf_txvga"): int(float(self.v["txvga"].get() or 10))})
         if self.v["hamlib_model"].get().strip().isdigit():
             ch[("radio", "hamlib_model")] = int(self.v["hamlib_model"].get())
-        err = write_keys(ch, {b: self.v["band_" + b].get() for b in ("2m", "1.25m", "70cm")})
+        err = write_keys(ch, {b: self.v["band_" + b].get() for b in self.band_names})
         if err:
             messagebox.showerror("Settings", err, parent=self)
             return False

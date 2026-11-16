@@ -66,3 +66,10 @@ at once, an alert is shown, and that band is not used again until you press ON A
 
 MAP (v0.16.0): the station map now uses CARTO map tiles (OpenStreetMap data). OpenStreetMap's own
 tile servers block maps opened from a file on your PC ("Access blocked ... tile usage policy").
+
+SCHEDULE (v0.17.0): main window -> Schedule. Choose when ON AIR transmits and when it only listens:
+- Transmit all the time (decoding between transmissions), or
+- Take turns: transmit for 30 min / 3 / 6 / 9 / 12 / 24 h, then listen and decode for 30 min ... 24 h, or
+- By the hour: tick hours to transmit and hours to listen (local time or UTC); other hours pause.
+Listen-only time uses the Decode and Dial boxes on the main window. HF bands (160-6 m) can now be
+ticked in Station setup as well as in Bands and modes.

@@ -66,6 +66,14 @@ audio_device = "default"     # ALSA device of the rig's USB sound card, e.g. "pl
 max_tx_s = 320
 max_swr = 2.0                # drop PTT at once if the radio reports SWR above this (0 = off)
 
+[schedule]                   # when ON AIR transmits and when it only listens (main window: Schedule)
+mode = "continuous"          # "continuous", "cycle" (take turns) or "hours" (by the hour)
+tx_minutes = 30              # cycle: transmit for 30, 180, 360, 540, 720 or 1440 minutes ...
+listen_minutes = 180         # ... then listen and decode for 30 ... 1440 minutes, and repeat
+tx_hours = []                # hours: hours (0-23) to transmit, decoding between transmissions
+listen_hours = []            # hours: hours to listen and decode only; other hours are paused
+clock = "local"              # "local" or "utc" for the hours above
+
 [sdr]                        # HackRF transmit backend (experimental, see docs/SDR.md)
 hackrf_txvga = 10            # 0-47 dB; start LOW
 hackrf_amp = false           # extra 11 dB amplifier stage
