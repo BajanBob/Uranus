@@ -128,6 +128,10 @@ def main(argv=None):
     a.add_argument("--demo", action="store_true", help="sample stations, clearly labelled")
     a.add_argument("--open", action="store_true", help="open the map in a browser")
     a.add_argument("--out", default=os.path.join("out", "map.html"))
+    a = sub.add_parser("octopus", help="Octopus daily propagation analysis (2 m / 70 cm focus)")
+    a.add_argument("--day", help="UTC day YYYY-MM-DD (default: the last 24-48 h)")
+    a.add_argument("--csv", help="analyse a CSV table instead of out/spots.jsonl")
+    a.add_argument("--open", action="store_true", help="open the report")
     args = p.parse_args(argv)
     args.cmd = {"urc-encode": "pumpkin-encode", "urc-decode": "pumpkin-decode",
                 "urc-loopback": "pumpkin-loopback"}.get(args.cmd, args.cmd)
@@ -306,6 +310,14 @@ def main(argv=None):
         finally:
             if reporter:
                 reporter.flush()
+    elif args.cmd == "octopus":
+        from . import octopus
+        st = cfg["station"]
+        path, rows = octopus.run(st.get("grid6") or st["grid"], day=args.day, csv_path=args.csv)
+        print(f"Octopus: {len(rows)} station(s) -> {path}")
+        if args.open:
+            from .browser import open_html
+            open_html(path)
     elif args.cmd == "map":
         st = cfg["station"]
         rep_cfg = cfg.get("reporting", {})

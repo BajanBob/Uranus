@@ -131,6 +131,7 @@ def wspr_audio(call, grid, dbm, f0=1500.0):
 
 _FT8_LINE = re.compile(r"^\s*(\d{4,6})\s+(-?\d+)\s+(-?\d+\.\d)\s+(\d+)\s+[~#:@+&$]\s+(.+?)\s*$")
 _WSPR_LINE = re.compile(r"(-?\d+)\s+(-?\d+\.\d+)\s+(\d+\.\d{6})\s+(-?\d+)\s+(\S.*?)\s*$")
+_FLAGS = re.compile(r"\s{2,}(\?\s*)?(a\d)?\s*$|\s+\?\s*(a\d)?\s*$|\s+a\d\s*$")
 _GRID = re.compile(r"^[A-R]{2}\d{2}([A-Xa-x]{2})?$")
 _CALL = re.compile(r"^(?=.*\d)[A-Z0-9/]{3,11}$")
 
@@ -203,9 +204,13 @@ def _jt9_decode(x, dial_hz, flag, period, seconds, fs=FS, workdir=None):
         if not m:
             continue
         msg = m.group(5).strip()
+        flags = ""
+        fm = _FLAGS.search(msg)
+        if fm:                                   # WSJT-X quality / a-priori markers, e.g. "? a1"
+            flags, msg = fm.group(0).strip(), msg[:fm.start()].rstrip()
         call, grid = parse_ft8_message(msg)
         res.append({"snr": float(m.group(2)), "dt": float(m.group(3)), "freq_hz": int(dial_hz + int(m.group(4))),
-                    "message": msg, "call": call, "grid": grid})
+                    "message": msg, "call": call, "grid": grid, "flags": flags})
     return res
 
 

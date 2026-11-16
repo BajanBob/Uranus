@@ -600,6 +600,46 @@ class TestBandsRadiosSDR(unittest.TestCase):
         self.assertEqual(quiet.stats["blanked_pct"], 0.0)
         self.assertGreater(np.corrcoef(out[3000:-3000], z[3000:-3000])[0, 1], 0.95)   # plain noise untouched
 
+    def test_hf_band_and_classification(self):
+        from uranus import propagation as pr
+        self.assertEqual(pr.band_of(14_075_000), "20m")
+        self.assertEqual(pr.band_of(144_174_000), "2m")
+        home, de = geo.grid_to_latlon("GK03gc"), geo.grid_to_latlon("JN48")
+        r = pr.classify(home, de, "20m", 1_763_262_000)
+        self.assertEqual(r[0][0], "f2")                          # never "tropospheric ducting" on HF
+        self.assertNotIn("ducting", [k for k, p, _ in r if p > 0])
+        r2 = pr.classify(home, geo.grid_to_latlon("FK96"), "2m", 1_763_262_000)
+        self.assertIn(r2[0][0], ("ducting", "tropo_scatter", "los", "aircraft"))
+
+    def test_sanity_flags_false_decodes(self):
+        from uranus import sanity
+        self.assertIn("Antarctica", sanity.suspect("2K5GEQ", "BB16"))
+        self.assertIn("ocean", sanity.suspect("Z65ZEB", "HL55"))
+        self.assertIn("?", sanity.suspect("PY5DC", "GG54", "? a1"))
+        for c, g in (("D44JB", "HK77"), ("8P5AB", "GK03"), ("5R8IC", "LH43"), ("XQ5BRC", "FF33"), ("VP8PJ", "GD18")):
+            self.assertEqual(sanity.suspect(c, g), "", c)
+        m = wsjt._FT8_LINE.match("000000 -22  0.3 1234 ~  CQ PY5DC GG54           ? a1")
+        msg = m.group(5).strip()
+        fm = wsjt._FLAGS.search(msg)
+        self.assertEqual((msg[:fm.start()].rstrip(), fm.group(0).strip()), ("CQ PY5DC GG54", "? a1"))
+
+    def test_octopus_report(self):
+        import tempfile
+        from uranus import octopus
+        d = tempfile.mkdtemp()
+        csvp = os.path.join(d, "t.csv")
+        with open(csvp, "w") as f:
+            f.write("call,grid,snr,best,freq_hz,mode,time,direction\n"
+                    "DL8WEM,JN48,-17,-15,14075000,FT8,1763262000,rx\n"
+                    "2K5GEQ,BB16,-24,-24,14075000,FT8,1763262000,rx\n"
+                    "J69DS,FK93,-12,-8,144174000,FT8,1763262000,rx\n")
+        path, rows = octopus.run("GK03gc", csv_path=csvp, day="2026-11-16", root=d)
+        t = open(path).read()
+        self.assertIn("## 2 m and 70 cm", t)
+        self.assertIn("J69DS", t.split("## HF")[0])               # 2 m station listed in the focus section
+        self.assertIn("2K5GEQ", t.split("## Anomalies")[1])
+        self.assertIn("F2-layer skywave", t)
+
     def test_gui_colour_table_complete(self):
         import ast
         import re as _re

@@ -1383,6 +1383,7 @@ class App(tk.Tk):
                  lambda: self.cli(["cucumber-loopback", "--submode", "CUCUMBER-15", "--cnr", "-8"])),
                 ("UR demo: 19 dB below the noise", lambda: self.cli(["ur-loopback", "--submode", "UR-15",
                                                                      "--snr", "-19"])),
+                ("Octopus daily analysis (research report)", lambda: self.cli(["octopus"])),
                 ("Map demo (sample pumpkins)", lambda: self.cli(["map", "--demo", "--open"])),
                 ("Link budget, 400 km 2 m path", lambda: self.cli(["link-budget", "--example"])),
                 ("Show a test decode alert", lambda: self.on_decode(

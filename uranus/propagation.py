@@ -32,7 +32,12 @@ MODES = {
     "meteor": "Meteor scatter",
     "es": "Sporadic-E",
     "tep": "Trans-equatorial (TEP)",
+    "f2": "F2-layer skywave",
+    "ground": "Ground wave / local",
 }
+
+# HF (160-10 m): the troposphere and TEP play no part; paths are ionospheric (F2, occasionally E/Es)
+HF = ("160m", "80m", "60m", "40m", "30m", "20m", "17m", "15m", "12m", "10m")
 
 # characteristic path length: (median km, spread in decades)
 DIST = {"tropo_scatter": (250, 0.30), "ducting": (600, 0.30), "aircraft": (450, 0.22),
@@ -42,19 +47,51 @@ PRIOR = {"2m": {"los": 1.0, "tropo_scatter": 1.0, "ducting": 0.8, "aircraft": 0.
                 "es": 0.45, "tep": 0.2},
          "1.25m": {"los": 1.0, "tropo_scatter": 1.0, "ducting": 0.85, "aircraft": 0.55, "meteor": 0.25,
                    "es": 0.08, "tep": 0.06},
+         "6m": {"los": 1.0, "tropo_scatter": 0.9, "ducting": 0.5, "aircraft": 0.4, "meteor": 0.6,
+                "es": 1.0, "tep": 0.7},
          "70cm": {"los": 1.0, "tropo_scatter": 1.0, "ducting": 0.9, "aircraft": 0.55, "meteor": 0.12,
                   "es": 0.01, "tep": 0.03}}
 
 
 def band_of(freq_hz):
     f = (freq_hz or 0) / 1e6
-    if 144 <= f <= 148:
-        return "2m"
     if 219 <= f <= 225:
         return "1.25m"
-    if 420 <= f <= 450:
-        return "70cm"
+    from .freqplan import BAND_EDGES
+    for name, (lo, hi) in BAND_EDGES.items():
+        if lo - 0.005 <= f <= hi + 0.005:
+            return name
     return "?"
+
+
+def classify_hf(home, remote, band, utc_ts, snr=None):
+    """HF paths: ground wave when short, otherwise F2 skywave with an estimated hop count.
+    Sporadic-E is offered on 17-10 m for 600-2300 km single hops."""
+    d = geo.distance_km(home, remote)
+    hops = max(1, math.ceil(d / 3500.0))
+    out = {"ground": 0.0, "f2": 1.0, "es": 0.0}
+    why = {"ground": [], "f2": [f"{d:.0f} km: about {hops} F2 hop{'s' if hops > 1 else ''}"], "es": []}
+    if d < 120:
+        out["ground"], out["f2"] = 0.8, 0.2
+        why["ground"].append(f"{d:.0f} km: within ground-wave range")
+    if band in ("17m", "15m", "12m", "10m") and 600 <= d <= 2300:
+        out["es"] = 0.25
+        why["es"].append("one sporadic-E hop is possible on the higher HF bands")
+    h_home, h_rem = solar_hour(utc_ts, home[1]), solar_hour(utc_ts, remote[1])
+    dark = lambda h: h >= 19 or h < 5             # noqa: E731
+    if dark(h_home) and dark(h_rem):
+        why["f2"].append("both ends in darkness (night-time F2 path)")
+    elif dark(h_home) != dark(h_rem):
+        why["f2"].append("one end in daylight, one in darkness (possible greyline enhancement)")
+    e1, e2 = dip_equator_lat(home[1]), dip_equator_lat(remote[1])
+    if (home[0] - e1) * (remote[0] - e2) < 0:
+        why["f2"].append("crosses the geomagnetic equator (equatorial anomaly can strengthen evening paths)")
+    tot = sum(out.values())
+    res = [(k, v / tot, why[k]) for k, v in out.items() if v > 0]
+    res.sort(key=lambda x: -x[1])
+    if len(res) == 1:
+        res.append(("ground", 0.0, []))
+    return res
 
 
 def dip_equator_lat(lon):
@@ -87,6 +124,8 @@ def solar_hour(utc_ts, lon):
 def classify(home, remote, band, utc_ts, snr=None, fade_db=None, spread_hz=None, steady=None,
              ant_heights=(10.0, 10.0)):
     """home/remote: (lat, lon). Returns [(mode_key, prob, [reasons])] sorted, best first."""
+    if band in HF:
+        return classify_hf(home, remote, band, utc_ts, snr)
     d = geo.distance_km(home, remote)
     mid_lat, mid_lon = (home[0] + remote[0]) / 2, (home[1] + remote[1]) / 2
     hr = solar_hour(utc_ts, mid_lon)

@@ -26,10 +26,13 @@ def aggregate(spots, home_grid, online_min=30, now=None, home_latlon=None, ant_h
     now = now or time.time()
     home = home_latlon or geo.grid_to_latlon(home_grid)
     by = {}
+    from .sanity import suspect
     for s in spots:
         try:
             lat, lon = geo.grid_to_latlon(s["grid"])
         except (ValueError, KeyError, IndexError):
+            continue
+        if suspect(s.get("call"), s.get("grid")):      # false decodes logged by older versions
             continue
         band = propagation.band_of(s.get("freq_hz"))
         st = by.setdefault((s["call"], band), {
@@ -238,8 +241,12 @@ footer { padding: 8px 16px 18px; font: .72rem var(--mono); color: var(--muted); 
   }, 0);
   var css = getComputedStyle(document.documentElement);
   function col(n) { return css.getPropertyValue(n).trim(); }
-  function bandCol(b) { return b === "70cm" ? col("--b70") : b === "1.25m" ? col("--b125") : col("--b2m"); }
-  function bandTxt(b) { return b === "70cm" ? "70 cm" : b === "1.25m" ? "1.25 m" : b === "2m" ? "2 m" : "?"; }
+  var HFCOL = { "160m": "#6b4f2a", "80m": "#8a5a2b", "60m": "#9a6b2f", "40m": "#b07a2a", "30m": "#c08a2a",
+                "20m": "#d0682a", "17m": "#c9502e", "15m": "#b8402f", "12m": "#a33a4a", "10m": "#8e3560", "6m": "#5a6fd0" };
+  function bandCol(b) { return b === "70cm" ? col("--b70") : b === "1.25m" ? col("--b125") : b === "2m" ? col("--b2m")
+                               : (HFCOL[b] || "#7a8794"); }
+  function bandTxt(b) { return b === "70cm" ? "70 cm" : b === "1.25m" ? "1.25 m" : b === "2m" ? "2 m"
+                               : /^\d+m$/.test(b) ? b.replace("m", " m") : "?"; }
   function stCol(s) { return s.online ? col("--online") : col("--offline"); }
   function fmtSnr(v) { return (v === null || v === undefined || v !== v || v <= -99) ? "-" : (v > 0 ? "+" : "") + Math.round(v); }
   function ago(m) { return m < 1 ? "now" : m < 60 ? m + " min" : Math.round(m / 60) + " h"; }
@@ -283,9 +290,10 @@ footer { padding: 8px 16px 18px; font: .72rem var(--mono); color: var(--muted); 
     " · propagation is an evidence-weighted estimate (distance, band, time, season, path, measured fading), not a certainty";
 
   // per-band propagation cards
-  var palette = { los: "#7a8794", tropo_scatter: "#2f80c9", ducting: "#0b8a6c", aircraft: "#d08a1c", meteor: "#c8372d", es: "#8a3fd0", tep: "#b0337f" };
+  var palette = { f2: "#d0682a", ground: "#5d6872", los: "#7a8794", tropo_scatter: "#2f80c9", ducting: "#0b8a6c", aircraft: "#d08a1c", meteor: "#c8372d", es: "#8a3fd0", tep: "#b0337f" };
   var bands = document.getElementById("bands");
-  ["2m", "1.25m", "70cm"].forEach(function (b) {
+  ["2m", "1.25m", "70cm"].concat(Object.keys(D.summary).filter(function (b) {
+    return ["2m", "1.25m", "70cm"].indexOf(b) < 0; })).forEach(function (b) {
     var r = D.summary[b];
     if (!r && b === "1.25m") return;
     var div = document.createElement("div"); div.className = "band";

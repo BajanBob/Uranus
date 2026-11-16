@@ -299,6 +299,12 @@ class Listener:
             for r in res:
                 if r.get("mode_name"):
                     mode = r["mode_name"]                  # AUTO mode: the decoder that produced it
+                if r.get("kind") == "station":
+                    from .sanity import suspect
+                    why = suspect(r.get("call"), r.get("grid"), r.get("flags", ""))
+                    if why:                                # shown, but kept off the map and PSK Reporter
+                        r["kind"] = "message"
+                        r["message"] = f"{r.get('message') or (r['call'] + ' ' + r['grid'])}   [suspect: {why}]"
                 if r.get("kind") == "message":
                     log.info("%s %+.0f dB  %s", mode, r["snr"], r["message"])
                     self.on_event({"type": "message", "mode": mode, "snr": r["snr"], "text": r["message"],
