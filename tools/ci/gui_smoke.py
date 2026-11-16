@@ -83,7 +83,7 @@ assert a.state == "listen", a.state
 a.evq.put({"type": "swr_trip", "swr": 3.1, "limit": 2.0, "freq_mhz": 14.074, "band": "20m", "label": "ft8"})
 a.handle_events_extra()
 assert len(a.ticker_items) == 3, a.ticker_items
-assert "Beacon bands" in a.st_rows
+assert a.st_rows == {} and "Beacon bands" not in a.st_rows   # Station card removed
 for _ in range(30):
     a.scroll_ticker()
 a.update_decoder()

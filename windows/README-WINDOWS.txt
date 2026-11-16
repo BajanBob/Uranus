@@ -4,7 +4,7 @@ URANUS ON WINDOWS
 EASIEST: download Uranus-Windows-exe.zip, unzip it and double-click Uranus.exe.
 No Python needed. On first start the Setup wizard asks for your callsign,
 grid, radio (e.g. Icom IC-9100), its USB Audio CODEC, CAT port, bands and
-PSK Reporter. Then press Show plan, Dry run, and ON AIR. Hover over any
+PSK Reporter. Then tick bands in Bands and modes and press ON AIR. Hover over any
 control for help. WhisperMite-Setup.exe is in the WhisperMite folder.
 
 FROM SOURCE (needs Python):
@@ -33,7 +33,7 @@ GOING ON AIR (plug and play)
   (Settings > Time & language > Sync now; better: install Meinberg NTP).
 - Bands and modes: one tab per band; tick each mode on or off and pick its
   frequency from the band-plan list (see docs\FREQUENCIES.md).
-- Press Show plan, Dry run, then ON AIR. While ON AIR, Uranus decodes on each
+- Tick bands in Bands and modes, then press ON AIR. While ON AIR, Uranus decodes on each
   frequency in the gaps between its own transmissions (like WSJT-X).
 - Listen + decode: choose AUTO, FT8, FT4, WSPR, APRS, Pumpkin, Cucumber or UR in the
   Receiver panel. FT8, FT4 and WSPR use WSJT-X's own decoders (install WSJT-X;
@@ -54,12 +54,15 @@ double-click WhisperMite\WhisperMite-Setup.bat for the settings uploader.
 HOW TO TRANSMIT (v0.15.0)
 -------------------------
 1. Bands and modes: open a band's tab (e.g. 20 m), tick "Use this band", tick the modes to send
-   (e.g. FT8), check the frequency, then Save. The Station card's "Beacon bands" line shows them.
-2. Show plan: check the schedule. Dry run: rehearse one cycle without keying (WAV files only).
+   (e.g. FT8), check the frequency, then Save.
+2. Optional: Demos and tools -> Show plan (the schedule) and Dry run (one cycle, WAV files only).
 3. Station setup: "Transmit with" = hamlib. Use Test transmit once - it reports the measured SWR.
-4. ON AIR. The status light is RED "TRANSMITTING" while the PTT is keyed and BLUE "LISTENING"
+4. ON AIR. The status light is RED "TRANSMITTING" while the PTT is keyed and LILAC "LISTENING"
    while it decodes between transmissions. Stop ends the session after the current transmission.
 
 SWR protection: while transmitting, Uranus reads the radio's SWR meter twice a second. If it goes
 above the limit (Station setup -> "Stop transmitting if SWR above", default 2.0) the PTT is dropped
 at once, an alert is shown, and that band is not used again until you press ON AIR again.
+
+MAP (v0.16.0): the station map now uses CARTO map tiles (OpenStreetMap data). OpenStreetMap's own
+tile servers block maps opened from a file on your PC ("Access blocked ... tile usage policy").

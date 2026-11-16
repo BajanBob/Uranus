@@ -317,11 +317,21 @@ footer { padding: 8px 16px 18px; font: .72rem var(--mono); color: var(--muted); 
     return label(s) + "<br>" + dirTxt(s.dirs) + " · " + esc(s.mode) + " · " + ago(s.ago_min) + " ago<br><b>" + esc(s.likely_name) + "</b> " + s.likely_p + "%";
   }
 
-  // ---------- online: Leaflet on OpenStreetMap ----------
+  // ---------- online: Leaflet on CARTO / OpenStreetMap ----------
   if (window.L) {
     var map = L.map("map", { worldCopyJump: true });
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 12,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' }).addTo(map);
+    // OpenStreetMap's own tile servers refuse pages opened from a file (no Referer header: "Access blocked").
+    // CARTO's basemaps (OpenStreetMap data) accept them; Esri takes over if CARTO can't be reached.
+    var OSM = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+    var base = L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", { maxZoom: 12,
+      subdomains: "abcd", attribution: OSM + ' &copy; <a href="https://carto.com/attributions">CARTO</a>' }).addTo(map);
+    var failed = 0, swapped = false;
+    base.on("tileerror", function () {
+      if (swapped || ++failed < 4) return;
+      swapped = true; map.removeLayer(base);
+      L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+        { maxZoom: 12, attribution: "Tiles &copy; Esri &middot; " + OSM }).addTo(map);
+    });
     var pts = [[H.lat, H.lon]], markers = [];
     S.forEach(function (s) {
       L.polyline([[H.lat, H.lon], [s.lat, s.lon]], { color: bandCol(s.band), weight: s.dirs.length > 1 ? 4 : 2, opacity: s.online ? .85 : .35,

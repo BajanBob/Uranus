@@ -173,10 +173,12 @@ def write_keys(changes, bands=None):
 
 
 # --------------------------------------------------------------------- theme
-C = {
-    "bg": "#0f1318", "panel": "#171d24", "panel2": "#1f2730", "rule": "#2a333d",
-    "ink": "#ece6da", "muted": "#8c98a4", "orange": "#ff9a4a", "green": "#5fd38a",
-    "blue": "#6aa8ff", "red": "#ff6b6b", "amber": "#ffcc66", "dark": "#0b0e12",
+C = {                            # v0.16 faceplate: deep blue, with blue / red / green and pink menu items
+    "bg": "#081330", "panel": "#0f1f48", "panel2": "#172b60", "rule": "#24407f",
+    "ink": "#eef3ff", "muted": "#8ea2cf", "orange": "#ff6fb8",   # "orange" = the pink accent
+    "pink": "#ff6fb8", "green": "#25e39a", "blue": "#2f80ff", "red": "#ff4458",
+    "lilac": "#6aa8ff",                                          # the LISTENING colour - unchanged
+    "amber": "#ffcc66", "dark": "#06102a",
 }
 UI = "Segoe UI" if os.name == "nt" else "DejaVu Sans"
 MONO = "Consolas" if os.name == "nt" else "DejaVu Sans Mono"
@@ -187,7 +189,7 @@ STATES = {                       # lamp colour, label
     "dry": (C["amber"], "DRY RUN"),
     "air": (C["amber"], "ON AIR"),          # beacon session running, waiting for the next slot
     "tx": (C["red"], "TRANSMITTING"),       # PTT keyed right now
-    "listen": (C["blue"], "LISTENING"),
+    "listen": (C["lilac"], "LISTENING"),
     "ok": (C["green"], "READY"),
 }
 
@@ -208,15 +210,15 @@ def apply_theme(root):
     st.configure("Card.TLabel", background=C["panel"], foreground=C["ink"])
     st.configure("Muted.TLabel", background=C["bg"], foreground=C["muted"])
     st.configure("CardMuted.TLabel", background=C["panel"], foreground=C["muted"])
-    st.configure("Section.TLabel", background=C["bg"], foreground=C["muted"], font=(UI, 8, "bold"))
-    st.configure("CardHead.TLabel", background=C["panel"], foreground=C["orange"], font=(UI, 9, "bold"))
+    st.configure("Section.TLabel", background=C["bg"], foreground=C["blue"], font=(UI, 8, "bold"))
+    st.configure("CardHead.TLabel", background=C["panel"], foreground=C["green"], font=(UI, 9, "bold"))
     st.configure("Big.TLabel", background=C["bg"], foreground=C["ink"], font=(UI, 16, "bold"))
     st.configure("TButton", background=C["panel2"], foreground=C["ink"], borderwidth=0, padding=(12, 7),
                  relief="flat", anchor="w")
     st.map("TButton", background=[("pressed", C["rule"]), ("active", "#28323d"), ("disabled", C["panel"])],
            foreground=[("disabled", C["muted"])])
-    for name, colour, text in (("Accent", C["orange"], C["dark"]), ("Danger", C["red"], C["dark"]),
-                               ("Info", C["blue"], C["dark"]), ("Go", C["green"], C["dark"])):
+    for name, colour, text in (("Accent", C["blue"], "#ffffff"), ("Danger", C["red"], "#ffffff"),
+                               ("Info", C["lilac"], C["dark"]), ("Go", C["green"], C["dark"])):
         st.configure(f"{name}.TButton", background=colour, foreground=text, font=(UI, 10, "bold"))
         st.map(f"{name}.TButton", background=[("active", colour), ("pressed", colour)])
     for name, base in (("Side", "TButton"), ("SideAccent", "Accent.TButton"), ("SideDanger", "Danger.TButton"),
@@ -224,6 +226,9 @@ def apply_theme(root):
         st.configure(f"{name}.TButton", **{k: st.lookup(base, k) for k in ("background", "foreground", "font")
                                           if st.lookup(base, k)}, padding=(12, 5), anchor="w")
         st.map(f"{name}.TButton", background=st.map(base, "background"), foreground=st.map(base, "foreground"))
+    st.configure("Side.TButton", background=C["panel"], foreground=C["pink"], font=(UI, 10, "bold"))
+    st.map("Side.TButton", background=[("pressed", C["pink"]), ("active", C["pink"])],
+           foreground=[("pressed", C["dark"]), ("active", C["dark"])])
     st.configure("TCheckbutton", background=C["bg"], foreground=C["ink"])
     st.map("TCheckbutton", background=[("active", C["bg"])], indicatorcolor=[("selected", C["orange"])])
     st.configure("Card.TCheckbutton", background=C["panel"], foreground=C["ink"], font=(UI, 10, "bold"))
@@ -354,7 +359,7 @@ class App(tk.Tk):
         right.pack(side="left", fill="both", expand=True, padx=(18, 0))
         cards = ttk.Frame(right)
         cards.pack(fill="x")
-        self._station_card(cards)
+        self.st_rows = {}                    # Station card removed from the faceplate (v0.16)
         self._psk_card(cards)
         self._receiver(right)
         self._console(right)
@@ -385,7 +390,7 @@ class App(tk.Tk):
                  fg=C["muted"], font=(UI, 9)).pack(anchor="w")
         clock = tk.Frame(h, bg=C["bg"])
         clock.pack(side="right")
-        self.utc = tk.Label(clock, text="--:--:--", bg=C["bg"], fg=C["orange"], font=(MONO, 24, "bold"))
+        self.utc = tk.Label(clock, text="--:--:--", bg=C["bg"], fg=C["green"], font=(MONO, 24, "bold"))
         self.utc.pack(anchor="e")
         self.utc_date = tk.Label(clock, text="", bg=C["bg"], fg=C["muted"], font=(MONO, 9))
         self.utc_date.pack(anchor="e")
@@ -396,6 +401,10 @@ class App(tk.Tk):
         Tooltip(self.chip, "Your callsign and grid square from the settings. Change them with the Setup wizard.")
 
     def _state_strip(self):
+        band = tk.Frame(self, bg=C["bg"], height=4)
+        band.pack(fill="x", padx=18, pady=(0, 6))
+        for col in (C["blue"], C["red"], C["green"]):
+            tk.Frame(band, bg=col, height=4).pack(side="left", fill="x", expand=True)
         s = tk.Frame(self, bg=C["panel"])
         s.pack(fill="x", padx=18, pady=(4, 10))
         self.lamp = tk.Canvas(s, width=22, height=22, bg=C["panel"], highlightthickness=0)
@@ -406,7 +415,8 @@ class App(tk.Tk):
         self.state_lbl.pack(side="left")
         self.status = tk.Label(s, text="", bg=C["panel"], fg=C["muted"], font=(UI, 10), anchor="w")
         self.status.pack(side="left", fill="x", expand=True)
-        Tooltip(self.lamp, "Grey: standby · Amber: working or dry run · Red: ON AIR · Blue: listening")
+        Tooltip(self.lamp, "Grey: standby · Amber: working, dry run or waiting to transmit · Red: transmitting · "
+                           "Lilac: listening")
 
     def _sidebar(self, parent):
         side = ttk.Frame(parent, width=240)
@@ -424,10 +434,6 @@ class App(tk.Tk):
                  "everything else (timing, APRS details, frequencies)."),
             ]),
             ("OPERATE", [
-                ("Show plan", lambda: self.cli(["plan", "--cycles", "2"]), None,
-                 "The next two cycles of transmissions with times and frequencies. Nothing is sent."),
-                ("Dry run (1 cycle)", self.dry_run, None,
-                 "One full cycle in real time, writing WAV files instead of transmitting."),
                 ("ON AIR", self.on_air, "Danger", "Start the transmit schedule on your radio. Asks first."),
                 ("Listen + decode", self.listen, "Info", "Decode Pumpkin, UR or Cucumber from the radio every "
                  "slot, log who you hear and, if live upload is on, send the spots to PSK Reporter."),
@@ -439,8 +445,8 @@ class App(tk.Tk):
                 ("Station map", lambda: self.cli(["map", "--psk", "--open"]), None,
                  "Map of stations you heard and stations that heard you (from PSK Reporter). Every station is a "
                  "pumpkin, coloured by band, ringed blue when online and red when not."),
-                ("Demos and tools...", self.demos_menu, None, "Try Uranus without a radio: Pumpkin and Cucumber "
-                 "decoding demos, the map demo, link budget and the output folder."),
+                ("Demos and tools...", self.demos_menu, None, "Show plan, dry run, Pumpkin and Cucumber decoding "
+                 "demos, the map demo, link budget and the output folder."),
             ]),
         ]
         for title, items in groups:
@@ -1070,16 +1076,20 @@ class App(tk.Tk):
         st, rc, rx = cfg.get("station", {}), cfg.get("radio", {}), cfg.get("receive", {})
         self.chip.config(text=f"{st.get('callsign', '?')} · {st.get('grid', '?')}")
         prof = rc.get("profile") or "not chosen"
-        self.st_rows["Radio"].config(text=prof)
-        self.st_rows["Transmit with"].config(text=rc.get("backend", "dry-run"))
+        rows = self.st_rows
+        if "Radio" in rows:
+            rows["Radio"].config(text=prof)
+            rows["Transmit with"].config(text=rc.get("backend", "dry-run"))
         for key, spec, kind in (("Audio to radio", rc.get("audio_device", "default"), "out"),
                                 ("Audio from radio", rx.get("audio_device", "default"), "in")):
             mark = "★ " if audiodev.is_codec(str(spec)) else ""
-            self.st_rows[key].config(text=f"{mark}{spec}")
+            if key in rows:
+                rows[key].config(text=f"{mark}{spec}")
         from .freqplan import BAND_NAMES
         on = [BAND_NAMES.get(b["name"], b["name"]) for b in cfg.get("band", []) if b.get("active", True)]
-        self.st_rows["Beacon bands"].config(
-            text=" · ".join(on) or "none ticked (only needed to transmit)")
+        self.beacon_bands = " · ".join(on) or "none ticked (only needed to transmit)"
+        if "Beacon bands" in rows:
+            rows["Beacon bands"].config(text=self.beacon_bands)
         rep = cfg.get("reporting", {})
         self.v_psk.set(bool(rep.get("pskreporter", False)))
         self.v_server.set("Test server" if rep.get("pskreporter_test_server", True) else "Live")
@@ -1212,7 +1222,7 @@ class App(tk.Tk):
                 "1. Click 'Bands and modes'.\n"
                 "2. On a band's tab (for example 20 m), tick 'Use this band', then tick the modes to send "
                 "(for example FT8) and check the frequency.\n"
-                "3. Click Save, then 'Show plan' to check, and 'Dry run' to rehearse without keying.\n"
+                "3. Click Save. (To rehearse without keying: Demos and tools → Show plan / Dry run.)\n"
                 "4. Click ON AIR.", parent=self)
             return
         if not messagebox.askyesno(
@@ -1287,9 +1297,11 @@ class App(tk.Tk):
         self.start(go, "Connecting to the radio...")
 
     def demos_menu(self):
-        m = tk.Menu(self, tearoff=0, bg=C["panel2"], fg=C["ink"], activebackground=C["orange"],
+        m = tk.Menu(self, tearoff=0, bg=C["panel2"], fg=C["pink"], activebackground=C["pink"],
                     activeforeground=C["dark"], font=(UI, 10))
         for label, cmd in [
+                ("Show plan (next two cycles, nothing sent)", lambda: self.cli(["plan", "--cycles", "2"])),
+                ("Dry run: one cycle, WAV files only", self.dry_run),
                 ("Pumpkin demo: decode 29 dB below the noise",
                  lambda: self.cli(["pumpkin-loopback", "--submode", "PUMPKIN-60", "--snr", "-29"])),
                 ("Cucumber demo: FM link 8 dB below the noise",
@@ -1832,7 +1844,7 @@ class BandsModesWindow(tk.Toplevel):
         bb.pack(fill="x", pady=(12, 0))
         b = ttk.Button(bb, text="Save", style="Accent.TButton", command=self.save)
         b.pack(side="right")
-        Tooltip(b, "Save, then press Show plan to see the new transmit schedule.")
+        Tooltip(b, "Save. To check the new transmit schedule: Demos and tools → Show plan.")
         ttk.Button(bb, text="Close", command=self.destroy).pack(side="right", padx=8)
 
     @staticmethod
@@ -1887,7 +1899,7 @@ class BandsModesWindow(tk.Toplevel):
         with open(CONFIG, "w", encoding="utf-8") as fh:
             fh.write(t)
         self.app.refresh_station()
-        self.app.set_state("ok", "Bands, modes and frequencies saved. Press Show plan to see the schedule.")
+        self.app.set_state("ok", "Bands, modes and frequencies saved. Press ON AIR to transmit.")
         self.app.print("Bands, modes and frequencies saved.\n")
         self.destroy()
 
@@ -2238,7 +2250,8 @@ class SetupWizard(tk.Toplevel):
             r.pack(fill="x", pady=2)
             tk.Label(r, text=k, bg=C["panel"], fg=C["muted"], width=18, anchor="w", font=(UI, 10)).pack(side="left")
             tk.Label(r, text=val, bg=C["panel"], fg=C["ink"], anchor="w", font=(UI, 10, "bold")).pack(side="left")
-        self._note("Next: press 'Show plan', then 'Dry run'. Go ON AIR once the dry run looks right.", C["muted"])
+        self._note("Next: tick bands in 'Bands and modes', then press ON AIR. (Show plan and Dry run are under "
+                   "'Demos and tools'.)", C["muted"])
 
     def finish(self, close=True):
         ch = station_keys(self.v["call"].get().strip(), self.v["grid"].get().strip())
@@ -2264,7 +2277,7 @@ class SetupWizard(tk.Toplevel):
             self.saved.config(text="✔ Saved " + time.strftime("%H:%M:%S"))
             return
         self.app.print(f"\nSetup wizard saved your settings to {CONFIG}\n")
-        self.app.set_state("ok", "Setup saved. Next: Show plan, then Dry run.")
+        self.app.set_state("ok", "Setup saved. Next: Bands and modes, then ON AIR.")
         self.destroy()
 
 
