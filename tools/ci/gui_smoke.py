@@ -173,22 +173,18 @@ assert g.load_cfg()["radio"]["cat_baud"] == 19200
 assert [b for b in g.load_cfg()["band"] if b["name"] == "20m"][0]["active"] is True
 snap(w, "4-station-setup.png")
 w.destroy()
-sw = g.ScheduleWindow(a)
+sw = g.TimetableWindow(a)
 sw.geometry("+60+40")
-sw.v_mode.set("cycle")
-sw.v_tx.set("30 min")
-sw.v_rx.set("3 h")
-sw._update()
+sw.load_example()
 assert sw.save() is True
-assert g.load_cfg()["schedule"]["listen_minutes"] == 180
-sw.v_mode.set("hours")
-sw._update()
-sw._fill(sw.v_txh, range(8, 20))
-sw._fill(sw.v_rxh, list(range(0, 8)) + list(range(20, 24)))
-assert sw.save() is True
-sched = g.load_cfg()["schedule"]
-assert sched["mode"] == "hours" and sched["tx_hours"] == list(range(8, 20)), sched
-snap(sw, "7-schedule.png")
+tt = g.load_cfg()["timetable"]
+assert tt["enabled"] is True and tt["windows"][2] == "09:03-22:00 transmit 3", tt
+sw.add_row(None)
+sw.rows[-1]["v"]["from"].set("23:59")
+sw.rows[-1]["v"]["to"].set("24:00")
+sw._preview()
+snap(sw, "7-timetable.png")
+sw.remove_row(sw.rows[-1])
 sw.destroy()
 c = g.ChatWindow(a)
 c.v_text.set("test")

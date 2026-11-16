@@ -190,7 +190,7 @@ STATES = {                       # lamp colour, label
     "air": (C["amber"], "ON AIR"),          # beacon session running, waiting for the next slot
     "tx": (C["red"], "TRANSMITTING"),       # PTT keyed right now
     "listen": (C["lilac"], "LISTENING"),
-    "off": (C["muted"], "PAUSED"),          # timetable: neither transmitting nor listening this hour
+    "off": (C["muted"], "PAUSED"),          # timetable: a pause window
     "ok": (C["green"], "READY"),
 }
 
@@ -395,8 +395,10 @@ class App(tk.Tk):
         self.utc.pack(anchor="e")
         self.utc_date = tk.Label(clock, text="", bg=C["bg"], fg=C["muted"], font=(MONO, 9))
         self.utc_date.pack(anchor="e")
-        Tooltip(self.utc, "UTC from this PC's clock. FT8, WSPR and Pumpkin need it correct to well under "
-                          "1 second: use time.is to check, and Meinberg NTP to keep it right.")
+        from . import clock
+        clock.start()                       # NTP check now and every 30 minutes
+        Tooltip(self.utc, lambda: "UTC, corrected by NTP (internet time servers). FT8, WSPR and the timetable "
+                                  "use this corrected time.\n" + clock.status())
         self.chip = tk.Label(h, text="", bg=C["panel2"], fg=C["ink"], font=(MONO, 12, "bold"), padx=14, pady=6)
         self.chip.pack(side="right", padx=18)
         Tooltip(self.chip, "Your callsign and grid square from the settings. Change them with the Setup wizard.")
@@ -435,8 +437,8 @@ class App(tk.Tk):
                  "everything else (timing, APRS details, frequencies)."),
             ]),
             ("OPERATE", [
-                ("Schedule", self.schedule, None, "When to transmit and when only to listen and decode: all the "
-                 "time, taking turns (30 min to 24 h each), or by the hour."),
+                ("Timetable", self.timetable, None, "Clock times for transmitting (every N minutes) and for "
+                 "listening and decoding, e.g. 01:00-06:00 transmit every 3 min, 07:00-09:00 listen."),
                 ("ON AIR", self.on_air, "Danger", "Start the transmit schedule on your radio. Asks first."),
                 ("Listen + decode", self.listen, "Info", "Decode Pumpkin, UR or Cucumber from the radio every "
                  "slot, log who you hear and, if live upload is on, send the spots to PSK Reporter."),
@@ -648,6 +650,8 @@ class App(tk.Tk):
                 t = e["type"]
                 if t == "gap_end":
                     self.dec = {"type": "idle"}
+                elif t == "next_tx":
+                    self.next_tx_at = e.get("at")
                 elif t in ("tx_start", "tx_end", "swr_trip", "swr_stop", "phase"):
                     self.on_tx_event(e)
                 elif t in ("waiting", "recording", "decoding", "result"):
@@ -678,13 +682,16 @@ class App(tk.Tk):
         if t == "phase":
             end = e.get("until")
             when = time.strftime("%H:%M", time.localtime(end)) if end else ""
+            win = e.get("window", "")
             if e["phase"] == "tx":
-                self.set_state("air", "Transmit phase" + (f" until {when}" if when else "") + ". Press Stop to end.")
+                self.set_state("air", f"Transmit window {win}" + (f", until {when}" if when else "")
+                               + ". Press Stop to end.")
             elif e["phase"] == "listen":
-                self.set_state("listen", f"Listening and decoding only, until {when}. Press Stop to end.")
+                self.set_state("listen", f"Listening and decoding until {when}. Press Stop to end.")
                 self.dec = {"type": "idle"}
             else:
-                self.set_state("off", f"Paused until {when} (no transmit or listen hours). Press Stop to end.")
+                self.next_tx_at = None
+                self.set_state("off", f"Paused until {when}. Press Stop to end.")
             return
         if t == "tx_start":
             if not dry:
@@ -1031,9 +1038,14 @@ class App(tk.Tk):
             self.next_heard_poll = time.time() + 300
             self.poll_heard_you()
         if self._tick % 5 == 0:
-            now = time.gmtime()
+            from . import clock
+            now = time.gmtime(clock.now())
             self.utc.config(text=time.strftime("%H:%M:%S", now))
-            self.utc_date.config(text=time.strftime("UTC · %a %d %b %Y", now))
+            ntp = "NTP ✓" if clock.offset() is not None else "NTP …"
+            nx = getattr(self, "next_tx_at", None)
+            nxt = (f"next TX {time.strftime('%H:%M:%S', time.localtime(nx))} · " if nx and nx > clock.now()
+                   else "")
+            self.utc_date.config(text=nxt + time.strftime("UTC · %a %d %b %Y · ", now) + ntp)
             self.update_psk()
         self.after(100, self.poll)
 
@@ -1229,8 +1241,12 @@ class App(tk.Tk):
         except Exception as e:              # noqa: BLE001
             messagebox.showerror("ON AIR", f"Could not read settings:\n{e}", parent=self)
             return
-        sc = timetable.settings(cfg)
-        listen_only = sc["mode"] == "hours" and sc["listen_hours"] and not sc["tx_hours"]
+        try:
+            sc = timetable.settings(cfg)
+        except ValueError as e:
+            messagebox.showerror("Timetable", str(e), parent=self)
+            return
+        listen_only = sc["enabled"] and sc["windows"] and all(w.action != "transmit" for w in sc["windows"])
         if not scheduler.bands_of(slots) and not listen_only:
             messagebox.showinfo(
                 "Nothing to transmit",
@@ -1243,7 +1259,7 @@ class App(tk.Tk):
             return
         if not messagebox.askyesno(
                 "Transmit?", "Start transmitting with your settings?\n\n"
-                f"Schedule: {timetable.describe(sc)}.\n\n"
+                f"{timetable.describe(sc)}.\n\n"
                 "Uranus connects to the radio by itself. Check: the radio is on and plugged in, "
                 "PC clock accurate, and every enabled frequency permitted by your licence."):
             return
@@ -1339,8 +1355,8 @@ class App(tk.Tk):
     def bands_modes(self):
         BandsModesWindow(self)
 
-    def schedule(self):
-        ScheduleWindow(self)
+    def timetable(self):
+        TimetableWindow(self)
 
     def setup(self):
         SetupWindow(self)
@@ -1426,133 +1442,176 @@ def station_keys(call, grid):
     return ch
 
 
-class ScheduleWindow(tk.Toplevel):
-    """When to transmit and when only to listen: continuous, taking turns, or by the hour."""
+class TimetableWindow(tk.Toplevel):
+    """Time windows for ON AIR: transmit every N minutes, listen and decode, or pause."""
+
+    ACT = {"transmit": "Transmit every", "listen": "Listen and decode", "pause": "Pause"}
 
     def __init__(self, app):
         super().__init__(app)
-        from . import timetable
-        self.app, self.tt = app, timetable
-        self.title("Uranus - Schedule")
+        from . import clock, timetable
+        self.app, self.tt, self.clock = app, timetable, clock
+        self.title("Uranus - Timetable")
         self.configure(bg=C["bg"])
         self.resizable(False, False)
         try:
-            sc = timetable.settings(load_cfg())
+            raw = load_cfg().get("timetable", {})
+            tt = timetable.settings({"timetable": raw})
         except Exception as e:              # noqa: BLE001
-            messagebox.showerror("Schedule", f"Could not read settings:\n{e}", parent=self)
+            messagebox.showerror("Timetable", f"Could not read the timetable:\n{e}", parent=self)
             self.destroy()
             return
         f = ttk.Frame(self, padding=(18, 14))
         f.pack(fill="both", expand=True)
-        ttk.Label(f, text="Schedule", style="Big.TLabel").pack(anchor="w")
-        ttk.Label(f, text="Choose when ON AIR transmits and when it only listens and decodes. Listen-only time "
-                          "uses the Decode and Dial boxes on the main window (e.g. FT8 on 14.074).",
-                  style="Muted.TLabel", wraplength=720).pack(anchor="w", pady=(2, 10))
-        self.v_mode = tk.StringVar(value=sc["mode"])
-        choices = [x for x in (self.tt.label(m) for m in timetable.CHOICES)]
+        ttk.Label(f, text="Timetable", style="Big.TLabel").pack(anchor="w")
+        ttk.Label(f, text="What ON AIR does at each time of day. Transmit windows send at their start time and "
+                          "every N minutes after it (e.g. 09:03, 09:06, 09:09 ...), cycling through the bands and "
+                          "modes ticked in Bands and modes, and decode in between. Listen windows only decode, "
+                          "using the Decode and Dial boxes on the main window.",
+                  style="Muted.TLabel", wraplength=700).pack(anchor="w", pady=(2, 10))
+        top = ttk.Frame(f)
+        top.pack(fill="x")
+        self.v_on = tk.BooleanVar(value=tt["enabled"])
+        cb = ttk.Checkbutton(top, text="Use this timetable", variable=self.v_on, command=self._preview)
+        cb.pack(side="left")
+        Tooltip(cb, "Off: ON AIR transmits all the time and decodes between transmissions.")
+        self.v_clock = tk.StringVar(value="UTC" if tt["clock"] == "utc" else "Local time")
+        ttk.Label(top, text="     Times in").pack(side="left")
+        c = ttk.Combobox(top, textvariable=self.v_clock, values=["Local time", "UTC"], state="readonly", width=10)
+        c.pack(side="left", padx=6)
+        c.bind("<<ComboboxSelected>>", lambda e: self._preview())
+        self.v_out = tk.StringVar(value="Listen and decode" if tt["outside"] == "listen" else "Pause")
+        ttk.Label(top, text="   Other times").pack(side="left")
+        c = ttk.Combobox(top, textvariable=self.v_out, values=["Listen and decode", "Pause"], state="readonly",
+                         width=17)
+        c.pack(side="left", padx=6)
+        c.bind("<<ComboboxSelected>>", lambda e: self._preview())
+        Tooltip(c, "What to do at times no window covers (e.g. 06:00-07:00 in the example).")
 
-        def section(value, text, tip):
-            r = ttk.Radiobutton(f, text=text, value=value, variable=self.v_mode, command=self._update)
-            r.pack(anchor="w", pady=(8, 2))
-            Tooltip(r, tip)
-            box = ttk.Frame(f, padding=(26, 0, 0, 0))
-            box.pack(anchor="w", fill="x")
-            return box
-        section("continuous", "Transmit all the time (decoding between transmissions)",
-                "The beacon cycles through your ticked bands and modes without stopping, and decodes on the same "
-                "frequency in the gaps between its own transmissions.")
-        box = section("cycle", "Take turns: transmit, then listen and decode",
-                      "Transmit for the first period, then only listen and decode for the second, and repeat, "
-                      "starting from when you press ON AIR.")
-        self.v_tx = tk.StringVar(value=self.tt.label(sc["tx_minutes"]))
-        self.v_rx = tk.StringVar(value=self.tt.label(sc["listen_minutes"]))
-        ttk.Label(box, text="Transmit for").pack(side="left")
-        self.cb_tx = ttk.Combobox(box, textvariable=self.v_tx, values=choices, state="readonly", width=8)
-        self.cb_tx.pack(side="left", padx=(6, 14))
-        ttk.Label(box, text="then listen and decode for").pack(side="left")
-        self.cb_rx = ttk.Combobox(box, textvariable=self.v_rx, values=choices, state="readonly", width=8)
-        self.cb_rx.pack(side="left", padx=6)
-
-        box = section("hours", "By the hour: choose the hours to transmit and the hours to listen",
-                      "Tick the hours of the day. Transmit hours also decode between transmissions; listen hours "
-                      "only decode; hours with neither ticked are paused. An hour ticked in both rows transmits.")
-        grid = tk.Frame(box, bg=C["bg"])
-        grid.pack(anchor="w", pady=(4, 0))
-        self.v_txh, self.v_rxh, self.hour_widgets = {}, {}, []
-        tk.Label(grid, text="", bg=C["bg"]).grid(row=0, column=0)
-        for h in range(24):
-            tk.Label(grid, text=f"{h:02d}", bg=C["bg"], fg=C["muted"], font=(MONO, 8)).grid(row=0, column=h + 1)
-        for row, (name, store, hours, colour) in enumerate((("Transmit", self.v_txh, sc["tx_hours"], C["red"]),
-                                                           ("Listen", self.v_rxh, sc["listen_hours"], C["lilac"])), 1):
-            tk.Label(grid, text=name, bg=C["bg"], fg=colour, font=(UI, 9, "bold"), anchor="e", width=8).grid(
-                row=row, column=0, sticky="e", padx=(0, 4))
-            for h in range(24):
-                store[h] = tk.BooleanVar(value=h in hours)
-                c = tk.Checkbutton(grid, variable=store[h], bg=C["bg"], activebackground=C["bg"],
-                                   selectcolor=C["panel2"], fg=colour, highlightthickness=0, bd=0)
-                c.grid(row=row, column=h + 1)
-                self.hour_widgets.append(c)
-        qb = ttk.Frame(box)
-        qb.pack(anchor="w", pady=(6, 0))
-        for text, cmd in (("Listen all day", lambda: self._fill(self.v_rxh, range(24))),
-                          ("Transmit 08-20, listen the rest",
-                           lambda: (self._fill(self.v_txh, range(8, 20)), self._fill(self.v_rxh, list(range(0, 8))
-                                                                                       + list(range(20, 24))))),
-                          ("Clear", lambda: (self._fill(self.v_txh, []), self._fill(self.v_rxh, [])))):
-            b = ttk.Button(qb, text=text, command=cmd, style="Side.TButton")
-            b.pack(side="left", padx=(0, 6))
-            self.hour_widgets.append(b)
-        self.v_clock = tk.StringVar(value="UTC" if sc["clock"] == "utc" else "Local time")
-        ttk.Label(qb, text="   Hours in").pack(side="left")
-        self.cb_clock = ttk.Combobox(qb, textvariable=self.v_clock, values=["Local time", "UTC"], state="readonly",
-                                     width=10)
-        self.cb_clock.pack(side="left", padx=6)
-        Tooltip(self.cb_clock, "Local time follows this PC's clock (Barbados is UTC-4). UTC matches the FT8 and "
-                               "WSPR world.")
+        self.table = tk.Frame(f, bg=C["bg"])
+        self.table.pack(anchor="w", pady=(12, 4))
+        for col, text in enumerate(("From", "To", "Do", "Every", "")):
+            tk.Label(self.table, text=text, bg=C["bg"], fg=C["blue"], font=(UI, 9, "bold")).grid(
+                row=0, column=col, sticky="w", padx=4)
+        self.rows = []
+        for w in tt["windows"] or [timetable.parse(x) for x in timetable.EXAMPLE]:
+            self.add_row(w)
         bb = ttk.Frame(f)
-        bb.pack(fill="x", pady=(16, 0))
-        ttk.Button(bb, text="Save", style="Accent.TButton", command=self.save).pack(side="left")
-        ttk.Button(bb, text="Close", command=self.destroy).pack(side="left", padx=8)
-        self.summary = ttk.Label(bb, text="", style="Muted.TLabel")
-        self.summary.pack(side="left", padx=8)
-        self._update()
+        bb.pack(fill="x", pady=(4, 0))
+        for text, cmd, tip in (("+ Add a window", lambda: self.add_row(None), "Add another time window."),
+                               ("Load my example", self.load_example,
+                                "01:00-06:00 transmit every 3 min, 07:00-09:00 listen, 09:03-22:00 transmit every "
+                                "3 min, 22:00-23:59 listen.")):
+            bt = ttk.Button(bb, text=text, command=cmd, style="Side.TButton")
+            bt.pack(side="left", padx=(0, 6))
+            Tooltip(bt, tip)
+        self.preview = tk.Label(f, text="", bg=C["panel"], fg=C["ink"], font=(MONO, 9), justify="left",
+                                anchor="w", padx=10, pady=8, wraplength=700)
+        self.preview.pack(fill="x", pady=(10, 0))
+        self.ntp = tk.Label(f, text="", bg=C["bg"], fg=C["green"], font=(UI, 9), anchor="w")
+        self.ntp.pack(fill="x", pady=(6, 0))
+        sb = ttk.Frame(f)
+        sb.pack(fill="x", pady=(12, 0))
+        ttk.Button(sb, text="Save", style="Accent.TButton", command=self.save).pack(side="left")
+        ttk.Button(sb, text="Close", command=self.destroy).pack(side="left", padx=8)
+        self.saved = ttk.Label(sb, text="", style="Muted.TLabel")
+        self.saved.pack(side="left", padx=8)
+        self._preview()
 
-    @staticmethod
-    def _fill(store, hours):
-        hours = set(hours)
-        for h, v in store.items():
-            v.set(h in hours)
+    def add_row(self, w):
+        r = len(self.rows) + 1
+        v = {"from": tk.StringVar(value=self.tt.hhmm(w.start) if w else "00:00"),
+             "to": tk.StringVar(value=self.tt.hhmm(w.end if w and w.end else 1440) if w else "01:00"),
+             "do": tk.StringVar(value=self.ACT[w.action] if w else self.ACT["listen"]),
+             "every": tk.StringVar(value=f"{w.every} min" if w else "3 min")}
+        ws = [ttk.Entry(self.table, textvariable=v["from"], width=7),
+              ttk.Entry(self.table, textvariable=v["to"], width=7),
+              ttk.Combobox(self.table, textvariable=v["do"], values=list(self.ACT.values()), state="readonly",
+                           width=17),
+              ttk.Combobox(self.table, textvariable=v["every"], values=[f"{m} min" for m in self.tt.INTERVALS],
+                           width=8)]
+        rm = ttk.Button(self.table, text="✕", width=3, command=lambda: self.remove_row(row))
+        ws.append(rm)
+        for col, wd in enumerate(ws):
+            wd.grid(row=r, column=col, padx=4, pady=2, sticky="w")
+        for key in ("from", "to", "every"):
+            v[key].trace_add("write", lambda *a: self._preview())
+        ws[2].bind("<<ComboboxSelected>>", lambda e: self._preview())
+        Tooltip(ws[0], "Start time, HH:MM (24-hour). Transmit windows send at this time first.")
+        Tooltip(ws[1], "End time, HH:MM. 23:59 or 24:00 for the end of the day.")
+        Tooltip(ws[3], "Minutes between transmissions. 3 min = 20 an hour. Listening and decoding fill the time "
+                       "in between.")
+        row = {"v": v, "w": ws}
+        self.rows.append(row)
+        self._preview()
 
-    def _update(self):
-        mode = self.v_mode.get()
-        for w in (self.cb_tx, self.cb_rx):
-            w.config(state="readonly" if mode == "cycle" else "disabled")
-        for w in self.hour_widgets + [self.cb_clock]:
-            try:
-                w.config(state=("readonly" if w is self.cb_clock else "normal") if mode == "hours" else "disabled")
-            except tk.TclError:
-                pass
+    def remove_row(self, row):
+        for wd in row["w"]:
+            wd.destroy()
+        self.rows.remove(row)
+        self._preview()
 
-    def values(self):
-        return {"mode": self.v_mode.get(), "tx_minutes": self.tt.minutes_of(self.v_tx.get()),
-                "listen_minutes": self.tt.minutes_of(self.v_rx.get()),
-                "tx_hours": [h for h, v in self.v_txh.items() if v.get()],
-                "listen_hours": [h for h, v in self.v_rxh.items() if v.get()],
-                "clock": "utc" if self.v_clock.get() == "UTC" else "local"}
+    def load_example(self):
+        for row in list(self.rows):
+            self.remove_row(row)
+        for x in self.tt.EXAMPLE:
+            self.add_row(self.tt.parse(x))
+        self.v_on.set(True)
+        self._preview()
+
+    def lines(self):
+        act = {v: k for k, v in self.ACT.items()}
+        out = []
+        for row in self.rows:
+            v = row["v"]
+            a = act.get(v["do"].get(), "listen")
+            line = f"{v['from'].get().strip()}-{v['to'].get().strip()} {a}"
+            if a == "transmit":
+                line += " " + (v["every"].get().split() or ["3"])[0]
+            out.append(line)
+        return out
+
+    def _preview(self):
+        if not hasattr(self, "preview"):
+            return
+        try:
+            ws = [self.tt.parse(x) for x in self.lines()]
+        except ValueError as e:
+            self.preview.config(text=str(e), fg=C["red"])
+            return
+        if not self.v_on.get():
+            text = "Timetable off: ON AIR transmits all the time, decoding between transmissions."
+        else:
+            n = sum(w.length // w.every for w in ws if w.action == "transmit")
+            lines = [w.describe() + (f"   ({w.length // w.every} transmissions)" if w.action == "transmit" else "")
+                     for w in ws]
+            ov = self.tt.overlaps(ws)
+            text = "\n".join(lines) + f"\nAbout {n} transmissions a day."
+            if ov:
+                text += "\nOverlap: " + "; ".join(f"{a} / {b}" for a, b in ov) + " (the upper row wins)"
+        self.preview.config(text=text, fg=C["ink"])
+        self.ntp.config(text=self.clock.status())
 
     def save(self):
-        v = self.values()
-        if v["mode"] == "hours" and not (v["tx_hours"] or v["listen_hours"]):
-            messagebox.showerror("Schedule", "Tick at least one transmit or listen hour.", parent=self)
+        try:
+            ws = [self.tt.parse(x) for x in self.lines()]
+        except ValueError as e:
+            messagebox.showerror("Timetable", str(e), parent=self)
             return False
-        err = write_keys({("schedule", k): val for k, val in v.items()})
+        if self.v_on.get() and not ws:
+            messagebox.showerror("Timetable", "Add at least one window, or untick 'Use this timetable'.", parent=self)
+            return False
+        err = write_keys({("timetable", "enabled"): bool(self.v_on.get()),
+                          ("timetable", "clock"): "utc" if self.v_clock.get() == "UTC" else "local",
+                          ("timetable", "outside"): "listen" if self.v_out.get().startswith("Listen") else "pause",
+                          ("timetable", "windows"): [w.text() for w in ws]})
         if err:
-            messagebox.showerror("Schedule", err, parent=self)
+            messagebox.showerror("Timetable", err, parent=self)
             return False
-        text = self.tt.describe(v)
-        self.summary.config(text="✔ Saved")
-        self.app.print(f"\nSchedule saved: {text}\n")
-        self.app.set_state("ok", f"Schedule: {text}. Press ON AIR to start.")
+        tt = self.tt.settings(load_cfg())
+        self.saved.config(text="✔ Saved " + time.strftime("%H:%M:%S"))
+        self.app.print(f"\n{self.tt.describe(tt)}\n")
+        self.app.set_state("ok", "Timetable saved. Press ON AIR to start.")
         return True
 
 

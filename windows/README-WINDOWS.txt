@@ -67,9 +67,14 @@ at once, an alert is shown, and that band is not used again until you press ON A
 MAP (v0.16.0): the station map now uses CARTO map tiles (OpenStreetMap data). OpenStreetMap's own
 tile servers block maps opened from a file on your PC ("Access blocked ... tile usage policy").
 
-SCHEDULE (v0.17.0): main window -> Schedule. Choose when ON AIR transmits and when it only listens:
-- Transmit all the time (decoding between transmissions), or
-- Take turns: transmit for 30 min / 3 / 6 / 9 / 12 / 24 h, then listen and decode for 30 min ... 24 h, or
-- By the hour: tick hours to transmit and hours to listen (local time or UTC); other hours pause.
-Listen-only time uses the Decode and Dial boxes on the main window. HF bands (160-6 m) can now be
-ticked in Station setup as well as in Bands and modes.
+TIMETABLE (v0.18.0): main window -> Timetable. Clock times for ON AIR, for example:
+  01:00-06:00  transmit every 3 min (20 an hour), decoding in between
+  07:00-09:00  listen and decode
+  09:03-22:00  transmit every 3 min (09:03, 09:06, 09:09 ...)
+  22:00-23:59  listen and decode
+  other times  listen and decode (or pause)
+Click "Load my example", tick "Use this timetable", Save, then ON AIR. Transmissions cycle through the
+bands and modes ticked in Bands and modes. Listen windows use the Decode and Dial boxes.
+Timing is NTP-corrected: Uranus asks internet time servers (pool.ntp.org, time.windows.com) how far the
+PC clock is off and corrects for it. The clock at the top shows "NTP ✓" and the next transmission time.
+HF bands (160-6 m) can be ticked in Station setup as well as in Bands and modes.

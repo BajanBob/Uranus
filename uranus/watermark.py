@@ -77,12 +77,11 @@ def stamp_pdf(src, dst=None):
             with open(src, "rb") as a, open(dst, "wb") as b:
                 b.write(a.read())
         return dst
-    w = PdfWriter()
-    for page in r.pages:
+    w = PdfWriter(clone_from=r)
+    for page in w.pages:
         box = page.mediabox
         overlay = PdfReader(_invisible_page(float(box.width), float(box.height))).pages[0]
         page.merge_page(overlay)
-        w.add_page(page)
     meta = {k: v for k, v in (r.metadata or {}).items() if isinstance(v, str)}
     meta.update({"/Author": OWNER, "/Creator": f"{meta.get('/Creator', 'Uranus')} - {OWNER}".strip(" -"),
                  "/Subject": meta.get("/Subject", "") or MARK, "/Keywords": MARK, "/Watermark": OWNER,

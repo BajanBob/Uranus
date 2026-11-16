@@ -471,65 +471,89 @@ class TestBandsRadiosSDR(unittest.TestCase):
         with um.patch("socket.create_connection"), um.patch("uranus.radio._pick_player"):
             self.assertEqual(HamlibRadio.from_config({}).max_swr, 2.0)
 
-    def test_timetable_cycle_and_hours(self):
+    def test_timetable_windows_example(self):
         from uranus import timetable as tt
-        sc = tt.settings({"schedule": {"mode": "cycle", "tx_minutes": 30, "listen_minutes": 180}})
-        self.assertEqual(tt.phase_at(sc, 1000.0, 1000.0), ("tx", 1000.0 + 1800))
-        self.assertEqual(tt.phase_at(sc, 1000.0 + 1800, 1000.0), ("listen", 1000.0 + 1800 + 10800))
-        self.assertEqual(tt.phase_at(sc, 1000.0 + 12600 + 5, 1000.0)[0], "tx")      # repeats
-        self.assertEqual([tt.label(m) for m in tt.CHOICES], ["30 min", "3 h", "6 h", "9 h", "12 h", "24 h"])
-        self.assertEqual(tt.minutes_of("9 h"), 540)
-        sc = tt.settings({"schedule": {"mode": "hours", "tx_hours": [8, 9], "listen_hours": [10, 11, 12],
-                                       "clock": "utc"}})
+        t = tt.settings({"timetable": {"enabled": True, "clock": "utc", "windows": tt.EXAMPLE}})
         day = 1_700_006_400                                    # 00:00 UTC
         self.assertEqual(time.gmtime(day).tm_hour, 0)
-        self.assertEqual(tt.phase_at(sc, day + 8.5 * 3600, day), ("tx", day + 10 * 3600))
-        self.assertEqual(tt.phase_at(sc, day + 10 * 3600, day), ("listen", day + 13 * 3600))
-        self.assertEqual(tt.phase_at(sc, day + 14 * 3600, day), ("off", day + 32 * 3600))
-        self.assertEqual(tt.phase_at(tt.settings({}), day, day), ("tx", None))
+        H = 3600
+        w, act, end = tt.at(t, day + 1 * H + 1)
+        self.assertEqual((w.text(), act, end), ("01:00-06:00 transmit 3", "transmit", day + 6 * H))
+        ticks = tt.ticks(w, day + 1 * H, end, t)
+        self.assertEqual(len(ticks), 100)                      # 20 an hour for 5 hours
+        self.assertEqual(ticks[:2], [day + H, day + H + 180])
+        self.assertEqual(tt.at(t, day + 6.5 * H)[1:], ("listen", day + 7 * H))      # outside: listen
+        self.assertEqual(tt.at(t, day + 8 * H)[1:], ("listen", day + 9 * H))
+        self.assertEqual(tt.at(t, day + 9 * H + 60)[1:], ("listen", day + 9 * H + 180))  # 09:00-09:03 gap
+        w, act, end = tt.at(t, day + 10 * H + 100)              # 10:01:40
+        self.assertEqual((act, end), ("transmit", day + 22 * H))
+        first = tt.ticks(w, day + 10 * H + 100, end, t)[0]
+        self.assertEqual(first, day + 10 * H + 180)             # 10:03:00 - on the 09:03 + 3 min grid
+        self.assertEqual(tt.at(t, day + 23 * H)[1:], ("listen", day + 23 * H + 59 * 60))
+        t2 = tt.settings({"timetable": {"enabled": True, "clock": "utc", "outside": "pause",
+                                        "windows": ["22:00-02:00 transmit 5"]}})
+        self.assertEqual(tt.at(t2, day + 1 * H)[1:], ("transmit", day + 2 * H))  # across midnight
+        self.assertEqual(tt.at(t2, day + 3 * H)[1:], ("pause", day + 22 * H))
+        with self.assertRaises(ValueError):
+            tt.parse("25:00-26:00 listen")
+        self.assertEqual(tt.overlaps([tt.parse("01:00-03:00 listen"), tt.parse("02:00-04:00 pause")]),
+                         [("01:00-03:00 listen", "02:00-04:00 pause")])
 
-    def test_session_alternates_transmit_and_listen(self):
-        from uranus import timetable as tt
-        calls = []
-
-        class FakeRunner:
-            def __init__(self):
-                import threading
-                self.stop = threading.Event()
-
-            def run(self, until=None):
-                calls.append(("tx", round(until - time.time())))
-
-        class FakeListener:
-            stop = None
-
-            def run(self, until=None):
-                calls.append(("listen", round(until - time.time())))
+    def test_session_transmits_on_the_grid_and_listens_between(self):
+        from uranus import clock, timetable as tt
+        clock.set_offset(0.0)
+        fake_now = [1_700_006_400 + 9 * 3600 + 3 * 60 - 30.0]   # 09:02:30 UTC
+        events, sent = [], []
 
         cfg = {"station": {"callsign": "8P5AB", "grid": "GK03"}, "receive": {"dial_mhz": 14.074, "mode": "ft8"},
-               "schedule": {"mode": "cycle", "tx_minutes": 30, "listen_minutes": 180}}
-
-        class Rig:
-            tuned = []
-
-            def tune(self, hz, mode):
-                self.tuned.append((hz, mode))
+               "timetable": {"enabled": True, "clock": "utc", "windows": ["09:03-09:12 transmit 3"]}}
         sess = scheduler.Session.__new__(scheduler.Session)
-        sess.cfg, sess.radio, sess.sc = cfg, Rig(), tt.settings(cfg)
-        sess.runner = FakeRunner()
+        sess.cfg, sess.radio, sess.tt = cfg, None, tt.settings(cfg)
+        sess.on_event, sess.reporter, sess.listen_in_gaps, sess._k = events.append, None, True, 0
+        slot = type("S", (), {"band": "20m", "enabled": True, "mode": "ft8", "label": "ft8 14.074"})()
+        sess.slots = [slot]
+
+        class R:
+            blocked = {}
+            stop = __import__("threading").Event()
+
+            def _sleep_until(self, t):
+                fake_now[0] = max(fake_now[0], t)
+
+            def _one(self, s, rigmodes, cs, band):
+                sent.append(round(fake_now[0] + 5))
+                fake_now[0] += 15
+
+            def _gap(self, s, until):
+                fake_now[0] = max(fake_now[0], until)
+        sess.runner = R()
         sess.stop = sess.runner.stop
-        sess.on_event, sess.reporter, sess.listen_in_gaps = None, None, True
-        sess.listener_factory = FakeListener
-        sess.stop.wait = lambda s: None                        # don't really wait between phases
-        tt_phase = tt.phase_at
-        seq = iter([("tx", time.time() + 1800), ("listen", time.time() + 10800), ("tx", time.time() + 1800)])
-        tt.phase_at = lambda sc, t, start: next(seq)
+        real = clock.now
+        clock.now = lambda: fake_now[0]
         try:
-            sess.run(max_phases=3)
+            w, _, end = tt.at(sess.tt, fake_now[0] + 31)
+            sess._transmit(w, end)
         finally:
-            tt.phase_at = tt_phase
-        self.assertEqual([c[0] for c in calls], ["tx", "listen", "tx"])
-        self.assertEqual(Rig.tuned, [(14_074_000.0, "USB")])
+            clock.now = real
+        base = 1_700_006_400 + 9 * 3600
+        self.assertEqual(sent, [base + 180, base + 360, base + 540])   # 09:03, 09:06, 09:09
+        self.assertIn({"type": "next_tx", "at": base + 360}, events)
+
+    def test_ntp_query_math(self):
+        from uranus import clock
+        import unittest.mock as um
+        import struct as st
+        real = time.time()
+
+        def ntp(t):
+            sec = int(t) + 2208988800
+            return st.pack("!II", sec, int((t % 1) * 2 ** 32))
+        reply = bytes([0x24, 2]) + bytes(30) + ntp(real + 2.0) + ntp(real + 2.0)   # server 2 s ahead
+        sock = um.MagicMock()
+        sock.__enter__.return_value.recvfrom.return_value = (reply, None)
+        with um.patch("socket.socket", return_value=sock):
+            off, rtt = clock.query("x")
+        self.assertAlmostEqual(off, 2.0, delta=0.05)
 
     def test_hidden_watermark_html_pdf_and_map(self):
         import tempfile

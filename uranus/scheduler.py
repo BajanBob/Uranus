@@ -19,7 +19,7 @@ import time
 import tomllib
 from dataclasses import dataclass, field
 
-from . import aprs, cucumber, pumpkin, urmode, wsjt
+from . import aprs, clock, cucumber, pumpkin, urmode, wsjt
 
 log = logging.getLogger("uranus.scheduler")
 
@@ -193,7 +193,7 @@ class Runner:
         return urmode.modulate(tones, s.submode, f0=off), urmode.FS
 
     def run(self, cycles=None, until=None):
-        """Transmit cycle after cycle. With `until` (time.time()), stop before a slot that would run past it."""
+        """Transmit cycle after cycle. With `until` (clock.now()), stop before a slot that would run past it."""
         if not bands_of(self.slots):
             log.warning("no band and mode is ticked for transmitting")
             if until is not None:
@@ -212,10 +212,10 @@ class Runner:
                         return
                     if band in self.blocked:
                         break
-                    if until is not None and time.time() + 25 > until:
+                    if until is not None and clock.now() + 25 > until:
                         return
                     self._one(s, rigmodes, cs, band)
-                    gap_end = time.time() + gap_after(self.cfg, band_slots, i)
+                    gap_end = clock.now() + gap_after(self.cfg, band_slots, i)
                     self._gap(s, gap_end if until is None else min(gap_end, until))
             if self.blocked and all(b in self.blocked for b, _ in bands_of(self.slots)):
                 log.error("every band has been stopped for high SWR - not transmitting any more")
@@ -236,7 +236,7 @@ class Runner:
         except Exception as e:               # noqa: BLE001
             log.error("skip %s: %s", s.label, e)
             return
-        begin = align(time.time() + 4, s)    # 4 s to tune the rig
+        begin = align(clock.now() + 4, s)    # 4 s to tune the rig
         self._sleep_until(begin - 3)
         if self.stop.is_set():
             return
@@ -301,26 +301,29 @@ class Runner:
 
     def _sleep_until(self, t):
         while not self.stop.is_set():
-            r = t - time.time()
+            r = t - clock.now()
             if r <= 0:
                 return
             self.stop.wait(min(r, 0.5) if r > 0.05 else r)
 
 
 class Session:
-    """ON AIR with a timetable (see timetable.py): transmit phases run the Runner, listen phases only decode,
-    off phases wait. Shares one stop event, so Stop ends whichever phase is running."""
+    """ON AIR. Without a timetable: the Runner transmits all the time, decoding in the gaps. With one
+    (timetable.py): transmit windows send on their own N-minute grid (09:03, 09:06 ...) cycling through the
+    ticked bands and modes and decode in between; listen windows only decode; pause windows wait.
+    One stop event, so Stop ends whatever is running. All times come from the NTP-corrected clock."""
 
     def __init__(self, cfg, slots, radio):
         from . import timetable
-        self.cfg, self.radio = cfg, radio
-        self.sc = timetable.settings(cfg)
+        self.cfg, self.radio, self.slots = cfg, radio, slots
+        self.tt = timetable.settings(cfg)
         self.runner = Runner(cfg, slots, radio)
         self.stop = self.runner.stop
         self.on_event = None
         self.reporter = None
         self.listen_in_gaps = True
         self.listener_factory = None              # tests replace the decoder
+        self._k = 0                               # rotation through the ticked slots
 
     def _emit(self, ev):
         if self.on_event:
@@ -329,32 +332,73 @@ class Session:
             except Exception:                     # noqa: BLE001
                 pass
 
-    def run(self, max_phases=None):
+    def run(self, max_windows=None):
         from . import timetable
         r = self.runner
         r.on_event, r.reporter, r.listen_in_gaps = self.on_event, self.reporter, self.listen_in_gaps
-        start, n = time.time(), 0
-        log.info("schedule: %s", timetable.describe(self.sc))
-        while not self.stop.is_set() and (max_phases is None or n < max_phases):
-            phase, end = timetable.phase_at(self.sc, time.time(), start)
-            self._emit({"type": "phase", "phase": phase, "until": end})
-            if phase == "tx":
-                log.info("transmit phase%s", "" if end is None else
-                         " until " + time.strftime("%H:%M", time.localtime(end)))
-                r.run(until=end)
-                if end is None:
-                    return
-            elif phase == "listen":
-                log.info("listen-only phase until %s", time.strftime("%H:%M", time.localtime(end)))
+        if clock.offset() is None:
+            clock.sync()
+        log.info("%s", clock.status())
+        if not self.tt["enabled"] or not self.tt["windows"]:
+            r.run()
+            return
+        log.info("%s", timetable.describe(self.tt))
+        n = 0
+        while not self.stop.is_set() and (max_windows is None or n < max_windows):
+            w, action, end = timetable.at(self.tt, clock.now())
+            self._emit({"type": "phase", "phase": {"transmit": "tx", "listen": "listen"}.get(action, "off"),
+                        "until": end, "window": w.text() if w else "outside the timetable"})
+            if action == "transmit" and bands_of(self.slots):
+                self._transmit(w, end)
+            elif action in ("listen", "transmit"):
+                if action == "transmit":
+                    log.warning("transmit window but no band and mode is ticked - listening instead")
                 self._listen(end)
             else:
                 log.info("paused until %s", time.strftime("%H:%M", time.localtime(end)))
-            if end is not None:
-                self.stop.wait(max(0.0, end - time.time()))
+            r._sleep_until(end)
             n += 1
+
+    def _next_slot(self):
+        flat = [(b, s) for b, ss in bands_of(self.slots) for s in ss if b not in self.runner.blocked]
+        if not flat:
+            return None, None
+        b, s = flat[self._k % len(flat)]
+        self._k += 1
+        return b, s
+
+    def _transmit(self, w, end):
+        from . import timetable
+        r = self.runner
+        cs = self.cfg.get("carrier_sense", {})
+        rigmodes = {**RIG_MODE_DEFAULT, **self.cfg.get("rig_modes", {})}
+        tick_list = timetable.ticks(w, clock.now() + 6, end, self.tt)
+        log.info("transmit window %s: %d transmissions, first at %s", w.text(), len(tick_list),
+                 time.strftime("%H:%M:%S", time.localtime(tick_list[0])) if tick_list else "-")
+        if tick_list and tick_list[0] - clock.now() > 40:
+            self._emit({"type": "next_tx", "at": tick_list[0]})
+            self._listen(tick_list[0] - 6)         # decode until the first transmission
+        for i, tick in enumerate(tick_list):
+            if self.stop.is_set():
+                return
+            band, s = self._next_slot()
+            if s is None:
+                log.error("every band has been stopped for high SWR - listening for the rest of this window")
+                self._emit({"type": "swr_stop"})
+                self._listen(end)
+                return
+            r._sleep_until(tick - 5)
+            if self.stop.is_set():
+                return
+            r._one(s, rigmodes, cs, band)          # aligns to the tick (FT8 / FT4 slot, WSPR even minute)
+            nxt = tick_list[i + 1] if i + 1 < len(tick_list) else end
+            self._emit({"type": "next_tx", "at": nxt if i + 1 < len(tick_list) else None})
+            r._gap(s, nxt - 5)                     # decode on this frequency until just before the next one
 
     def _listen(self, end):
         from . import monitor
+        if end - clock.now() < 10:
+            return
         rx = self.cfg.get("receive", {})
         try:
             if hasattr(self.radio, "tune"):
@@ -366,6 +410,9 @@ class Session:
                                                                       on_event=self.on_event))
             lis = make()
             lis.stop = self.stop
+            self._emit({"type": "phase", "phase": "listen", "until": end, "window": "listening"})
             lis.run(until=end)
         except Exception as e:                    # noqa: BLE001
-            log.warning("not decoding in this listen phase: %s", e)
+            log.warning("not decoding now: %s", e)
+        finally:
+            self._emit({"type": "gap_end"})

@@ -66,13 +66,13 @@ audio_device = "default"     # ALSA device of the rig's USB sound card, e.g. "pl
 max_tx_s = 320
 max_swr = 2.0                # drop PTT at once if the radio reports SWR above this (0 = off)
 
-[schedule]                   # when ON AIR transmits and when it only listens (main window: Schedule)
-mode = "continuous"          # "continuous", "cycle" (take turns) or "hours" (by the hour)
-tx_minutes = 30              # cycle: transmit for 30, 180, 360, 540, 720 or 1440 minutes ...
-listen_minutes = 180         # ... then listen and decode for 30 ... 1440 minutes, and repeat
-tx_hours = []                # hours: hours (0-23) to transmit, decoding between transmissions
-listen_hours = []            # hours: hours to listen and decode only; other hours are paused
-clock = "local"              # "local" or "utc" for the hours above
+[timetable]                  # what ON AIR does at each time of day (main window: Timetable)
+enabled = false              # false: transmit all the time, decoding between transmissions
+clock = "local"              # "local" (this PC, Barbados UTC-4) or "utc"
+outside = "listen"           # at times no window covers: "listen" (decode) or "pause"
+# "start-end transmit N" sends every N minutes from the start time (decoding in between);
+# "start-end listen" only decodes; "start-end pause" does nothing. Times are NTP-corrected.
+windows = ['01:00-06:00 transmit 3', '07:00-09:00 listen', '09:03-22:00 transmit 3', '22:00-23:59 listen']
 
 [sdr]                        # HackRF transmit backend (experimental, see docs/SDR.md)
 hackrf_txvga = 10            # 0-47 dB; start LOW

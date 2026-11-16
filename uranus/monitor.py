@@ -18,7 +18,7 @@ import wave
 
 import numpy as np
 
-from . import cucumber, sdr, spots, pumpkin, urmode
+from . import clock, cucumber, sdr, spots, pumpkin, urmode
 
 log = logging.getLogger("uranus.listen")
 FS = 12000
@@ -214,7 +214,7 @@ class Listener:
             from . import aprs_rx, geo
             block = np.concatenate([self.aprs_tail, x])
             self.aprs_tail = x[-int(1.5 * FS):]           # keep 1.5 s so packets across blocks are caught
-            now, res = time.time(), []
+            now, res = clock.now(), []
             for fr in aprs_rx.decode_audio(block, FS, hf=self.dial_hz < 30e6):
                 if now - self.aprs_seen.get(fr, 0) < 30:
                     continue
@@ -251,7 +251,7 @@ class Listener:
                 "rec_s": self.frame_s + 4.5}
 
     def run(self, slots=None, until=None):
-        """Decode slot after slot. With `until` (a time.time() value), stop before a slot that would not
+        """Decode slot after slot. With `until` (a clock.now() value), stop before a slot that would not
         finish in time; the beacon uses this to listen in the gaps between its own transmissions."""
         log.info("Listening for %s on %.4f MHz dial (+%d Hz), %s slots",
                  self.submode, self.dial_hz / 1e6, self.f0, self.period)
@@ -259,19 +259,19 @@ class Listener:
         while not self.stop.is_set() and (slots is None or n < slots):
             rec_s = self.frame_s + 4.5
             if self.mode == "aprs":
-                start = time.time()                       # APRS packets come at any time: listen continuously
+                start = clock.now()                       # APRS packets come at any time: listen continuously
                 if until is not None:
                     rec_s = min(rec_s, until - start - 0.5)
                     if rec_s < 3:
                         break
             else:
-                start = math.ceil(time.time() / self.period) * self.period
+                start = math.ceil(clock.now() / self.period) * self.period
                 if until is not None and start + rec_s + 1.0 > until:
                     break
                 self.on_event({"type": "waiting", "start": start, **self._info()})
             lead = 0.0 if self.mode in ("ft8", "ft4", "wspr", "aprs", "auto") else 0.3   # slot-aligned audio for WSJT-X decoders
-            while not self.stop.is_set() and time.time() < start - lead:
-                self.stop.wait(min(0.5, max(0.01, start - lead - time.time())))
+            while not self.stop.is_set() and clock.now() < start - lead:
+                self.stop.wait(min(0.5, max(0.01, start - lead - clock.now())))
             if self.stop.is_set():
                 break
             self.on_event({"type": "recording", "start": start, "end": start + rec_s, **self._info(), "rec_s": rec_s})
