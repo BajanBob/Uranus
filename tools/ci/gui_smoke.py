@@ -71,6 +71,19 @@ a.evq.put({"type": "heard_you", "r": {"call": "W1ABC", "grid": "FN42", "snr": -1
                                        "mode": "PUMPKIN", "time": int(now)}})
 a.handle_events_extra()
 assert len(a.ticker_items) == 2, a.ticker_items
+# red while keyed, blue while listening in the gap, SWR trip alert
+FakeRunner.listen_in_gaps = True
+a.set_state("air")
+a.evq.put({"type": "tx_start", "label": "ft8", "freq_mhz": 14.074, "mode": "ft8", "seconds": 12.6})
+a.handle_events_extra()
+assert a.state == "tx" and a.state_lbl.cget("text") == "TRANSMITTING", a.state
+a.evq.put({"type": "tx_end", "label": "ft8", "swr": 1.3})
+a.handle_events_extra()
+assert a.state == "listen", a.state
+a.evq.put({"type": "swr_trip", "swr": 3.1, "limit": 2.0, "freq_mhz": 14.074, "band": "20m", "label": "ft8"})
+a.handle_events_extra()
+assert len(a.ticker_items) == 3, a.ticker_items
+assert "Beacon bands" in a.st_rows
 for _ in range(30):
     a.scroll_ticker()
 a.update_decoder()

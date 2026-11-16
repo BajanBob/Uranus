@@ -384,6 +384,92 @@ class TestBandsRadiosSDR(unittest.TestCase):
         r.tune(144_174_000, "USB")
         self.assertEqual(sent, ["F 144174000", "M USB 0"])
 
+    @staticmethod
+    def _fake_rig(swr_reading):
+        import threading
+        import time as _t
+        from uranus.radio import HamlibRadio
+        r = HamlibRadio.__new__(HamlibRadio)
+        r.max_swr, r.swr_poll_s, r.last_swr, r._swr_warned = 2.0, 0.1, None, False
+        r._lock, r.ptt_lead_s, r.max_tx_s = threading.Lock(), 0.0, 320
+        r.sent, keyed = [], threading.Event()
+
+        def cmd(text):
+            r.sent.append((round(_t.time(), 2), text))
+            if text == "T 1":
+                keyed.set()
+            elif text == "T 0":
+                keyed.clear()
+            elif text == "l SWR":
+                v = swr_reading()
+                if v is None:
+                    raise RuntimeError("RPRT -11")
+                return str(v)
+            return "RPRT 0"
+
+        def player(path, audio, fs, dur):
+            end = _t.time() + dur
+            while _t.time() < end and keyed.is_set():          # stops when PTT is dropped
+                _t.sleep(0.02)
+        r._cmd, r.player = cmd, player
+        return r
+
+    def test_swr_guard_drops_ptt(self):
+        import time as _t
+        from uranus.radio import SWRError
+        r = self._fake_rig(lambda: 3.4)
+        t0 = _t.time()
+        with self.assertRaises(SWRError) as ctx:
+            r.transmit(14_074_000, "USB", np.zeros(12000 * 5, np.float32), 12000, "ft8")
+        self.assertLess(_t.time() - t0, 2.0)                   # cut within about a second, not after 5 s
+        self.assertAlmostEqual(ctx.exception.swr, 3.4)
+        self.assertEqual(r.sent[-1][1], "T 0")
+
+    def test_swr_guard_passes_good_match_and_silent_rigs(self):
+        r = self._fake_rig(lambda: 1.3)
+        r.transmit(14_074_000, "USB", np.zeros(12000, np.float32), 12000, "ft8")
+        self.assertAlmostEqual(r.last_swr, 1.3)
+        r = self._fake_rig(lambda: None)                       # rig can't report SWR: transmit anyway
+        r.transmit(14_074_000, "USB", np.zeros(12000, np.float32), 12000, "ft8")
+        self.assertIsNone(r.last_swr)
+        r = self._fake_rig(lambda: 9.9)
+        r.max_swr = 0                                          # check switched off
+        r.transmit(14_074_000, "USB", np.zeros(6000, np.float32), 12000, "ft8")
+        self.assertNotIn("l SWR", [c for _, c in r.sent])
+
+    def test_runner_blocks_band_after_swr_trip(self):
+        import tempfile
+        from uranus.radio import SWRError
+        t = open("config/uranus.toml", encoding="utf-8").read().replace('callsign = "N0CALL"', 'callsign = "8P5AB"', 1)
+        with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False, encoding="utf-8") as f:
+            f.write(t)
+        cfg, slots = scheduler.load_config(f.name)
+
+        class Rig:
+            def tune(self, hz, mode):
+                pass
+
+            def transmit(self, *a):
+                raise SWRError(2.8, 2.0, "ft8")
+        r = scheduler.Runner(cfg, slots, Rig())
+        ev = []
+        r.on_event = ev.append
+        r._sleep_until = lambda t: None
+        r.audio_for = lambda s: (np.zeros(10), 12000)
+        s = next(x for x in slots if x.mode == "ft8")
+        r._one(s, scheduler.RIG_MODE_DEFAULT, {}, s.band)
+        self.assertEqual([e["type"] for e in ev], ["tx_start", "swr_trip", "tx_end"])
+        self.assertIn(s.band, r.blocked)
+
+    def test_radio_from_config(self):
+        from uranus.radio import HamlibRadio
+        import unittest.mock as um
+        with um.patch("socket.create_connection"), um.patch("uranus.radio._pick_player"):
+            r = HamlibRadio.from_config({"rigctld_port": 4532, "max_tx_s": 320, "data_mode": True, "max_swr": 2.5})
+        self.assertEqual((r.max_swr, r.max_tx_s, r.data_mode), (2.5, 320, True))
+        with um.patch("socket.create_connection"), um.patch("uranus.radio._pick_player"):
+            self.assertEqual(HamlibRadio.from_config({}).max_swr, 2.0)
+
     def test_aprs_iss_frequency_uses_ariss_path(self):
         from scipy.signal import resample_poly
         from uranus import aprs_rx

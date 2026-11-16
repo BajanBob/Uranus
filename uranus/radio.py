@@ -15,12 +15,42 @@ import shutil
 import socket
 import subprocess
 import tempfile
+import threading
 import time
 import wave
 
 import numpy as np
 
 log = logging.getLogger("uranus.radio")
+
+
+class SWRError(RuntimeError):
+    """Transmission stopped because the rig reported SWR above the limit."""
+
+    def __init__(self, swr, limit, label=""):
+        super().__init__(f"{label}: SWR {swr:.1f} above {limit:.1f} - PTT dropped".lstrip(": "))
+        self.swr, self.limit, self.label = swr, limit, label
+
+
+def _stop_audio():
+    """Cut transmit audio short (called from the SWR watchdog thread)."""
+    try:
+        import sounddevice as sd
+        sd.stop()
+    except Exception:                        # noqa: BLE001
+        pass
+    if os.name == "nt":
+        try:
+            import winsound
+            winsound.PlaySound(None, 0)
+        except Exception:                    # noqa: BLE001
+            pass
+    p = _APLAY.get("p")
+    if p is not None and p.poll() is None:
+        p.kill()
+
+
+_APLAY = {}
 
 
 def write_wav(path, audio, fs):
@@ -54,8 +84,13 @@ class DryRunRadio:
 
 class HamlibRadio:
     def __init__(self, host="127.0.0.1", port=4532, audio_device="default",
-                 ptt_lead_s=0.15, max_tx_s=320, data_mode=True):
+                 ptt_lead_s=0.15, max_tx_s=320, data_mode=True, max_swr=2.0):
         self.addr = (host, port)
+        self.max_swr = float(max_swr or 0)   # 0 = no SWR check
+        self.swr_poll_s = 0.5
+        self.last_swr = None                 # highest SWR seen during the last transmission
+        self._lock = threading.Lock()
+        self._swr_warned = False
         self.data_mode = data_mode
         self.audio_device = audio_device
         self.ptt_lead_s = ptt_lead_s
@@ -64,10 +99,18 @@ class HamlibRadio:
         self.sock = socket.create_connection(self.addr, timeout=3)
         self.f = self.sock.makefile("rw")
 
+    @classmethod
+    def from_config(cls, rc):
+        """Build from the [radio] settings table."""
+        return cls(rc.get("rigctld_host", "127.0.0.1"), int(rc.get("rigctld_port", 4532)),
+                   rc.get("audio_device", "default"), max_tx_s=float(rc.get("max_tx_s", 320)),
+                   data_mode=bool(rc.get("data_mode", True)), max_swr=float(rc.get("max_swr", 2.0)))
+
     def _cmd(self, text):
-        self.f.write(text + "\n")
-        self.f.flush()
-        reply = self.f.readline().strip()
+        with self._lock:
+            self.f.write(text + "\n")
+            self.f.flush()
+            reply = self.f.readline().strip()
         if reply.startswith("RPRT") and reply != "RPRT 0":
             raise RuntimeError(f"rigctld '{text}' -> {reply}")
         return reply
@@ -83,17 +126,60 @@ class HamlibRadio:
             time.sleep(0.2)
         return peak > threshold_db
 
+    def read_swr(self):
+        """SWR from the rig's meter (1.0 = perfect), or None if the rig can't report it."""
+        try:
+            v = float(self._cmd("l SWR"))
+        except (ValueError, RuntimeError, OSError):
+            return None
+        return v if v >= 1.0 else None if v <= 0 else 1.0
+
+    def _swr_watch(self, done, trip, label):
+        """While keyed, read SWR twice a second; above the limit, unkey at once."""
+        if done.wait(0.5):                   # let the PA and meter settle
+            return
+        while not done.is_set():
+            swr = self.read_swr()
+            if swr is None:
+                if not self._swr_warned:
+                    self._swr_warned = True
+                    log.warning("the radio does not report SWR through Hamlib - SWR protection is OFF")
+                return
+            self.last_swr = max(self.last_swr or 0, swr)
+            if swr > self.max_swr:
+                trip.append(swr)
+                log.error("SWR %.1f above %.1f on %s - dropping PTT", swr, self.max_swr, label)
+                try:
+                    self._cmd("T 0")
+                finally:
+                    _stop_audio()
+                return
+            done.wait(self.swr_poll_s)
+
     def transmit(self, freq_hz, rig_mode, audio, fs, label):
         dur = len(audio) / fs
         if dur > self.max_tx_s:
             raise RuntimeError(f"{label}: {dur:.0f} s exceeds max_tx_s")
         tmp = os.path.join(tempfile.gettempdir(), f"uranus_{os.getpid()}.wav")
         write_wav(tmp, audio, fs)
+        done, trip, watch = threading.Event(), [], None
+        self.last_swr = None
         try:
             self._cmd("T 1")
+            if self.max_swr > 0:
+                watch = threading.Thread(target=self._swr_watch, args=(done, trip, label), daemon=True)
+                watch.start()
             time.sleep(self.ptt_lead_s)
-            self.player(tmp, audio, fs, dur)
+            if not trip:
+                try:
+                    self.player(tmp, audio, fs, dur)
+                except Exception:            # noqa: BLE001
+                    if not trip:             # audio cut by the SWR trip is expected
+                        raise
         finally:
+            done.set()
+            if watch:
+                watch.join(2)
             for _ in range(3):               # make very sure PTT drops
                 try:
                     self._cmd("T 0")
@@ -101,6 +187,8 @@ class HamlibRadio:
                 except Exception:            # noqa: BLE001
                     time.sleep(0.2)
             os.unlink(tmp)
+        if trip:
+            raise SWRError(trip[0], self.max_swr, label)
 
     # Data modes take the transmit audio from the rig's USB sound card instead of the
     # microphone (Icom USB-D / FM-D, Yaesu DATA-USB / DATA-FM). WSJT-X does the same.
@@ -149,5 +237,9 @@ def _pick_player(device):
         raise RuntimeError("no audio player: install alsa-utils (aplay) or pip install sounddevice")
 
     def play_aplay(path, audio, fs, dur):
-        subprocess.run(["aplay", "-q", "-D", device, path], check=True, timeout=dur + 10)
+        p = _APLAY["p"] = subprocess.Popen(["aplay", "-q", "-D", device, path])
+        try:
+            p.wait(timeout=dur + 10)
+        finally:
+            _APLAY.pop("p", None)
     return play_aplay

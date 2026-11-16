@@ -50,3 +50,16 @@ unattended operation, or the new UR/Pumpkin modes.
 
 WhisperMite tools are in the WhisperMite folder of the Windows zip:
 double-click WhisperMite\WhisperMite-Setup.bat for the settings uploader.
+
+HOW TO TRANSMIT (v0.15.0)
+-------------------------
+1. Bands and modes: open a band's tab (e.g. 20 m), tick "Use this band", tick the modes to send
+   (e.g. FT8), check the frequency, then Save. The Station card's "Beacon bands" line shows them.
+2. Show plan: check the schedule. Dry run: rehearse one cycle without keying (WAV files only).
+3. Station setup: "Transmit with" = hamlib. Use Test transmit once - it reports the measured SWR.
+4. ON AIR. The status light is RED "TRANSMITTING" while the PTT is keyed and BLUE "LISTENING"
+   while it decodes between transmissions. Stop ends the session after the current transmission.
+
+SWR protection: while transmitting, Uranus reads the radio's SWR meter twice a second. If it goes
+above the limit (Station setup -> "Stop transmitting if SWR above", default 2.0) the PTT is dropped
+at once, an alert is shown, and that band is not used again until you press ON AIR again.

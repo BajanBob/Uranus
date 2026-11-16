@@ -185,7 +185,8 @@ STATES = {                       # lamp colour, label
     "idle": (C["muted"], "STANDBY"),
     "busy": (C["amber"], "WORKING"),
     "dry": (C["amber"], "DRY RUN"),
-    "air": (C["red"], "ON AIR"),
+    "air": (C["amber"], "ON AIR"),          # beacon session running, waiting for the next slot
+    "tx": (C["red"], "TRANSMITTING"),       # PTT keyed right now
     "listen": (C["blue"], "LISTENING"),
     "ok": (C["green"], "READY"),
 }
@@ -464,7 +465,8 @@ class App(tk.Tk):
                          ("Audio to radio", "Sound output that feeds the radio. ★ marks a radio USB codec, "
                                             "such as the IC-9100's 'USB Audio CODEC'."),
                          ("Audio from radio", "Sound input carrying the receiver's audio for decoding."),
-                         ("Bands", "Bands the beacon cycles through.")]:
+                         ("Beacon bands", "Bands ticked for TRANSMITTING in Bands and modes. Listening "
+                                          "doesn't use this - it follows the Decode and Dial boxes.")]:
             row = ttk.Frame(f, style="Card.TFrame")
             row.pack(fill="x", pady=1)
             k = ttk.Label(row, text=key, style="CardMuted.TLabel", width=15)
@@ -637,6 +639,8 @@ class App(tk.Tk):
                 t = e["type"]
                 if t == "gap_end":
                     self.dec = {"type": "idle"}
+                elif t in ("tx_start", "tx_end", "swr_trip", "swr_stop"):
+                    self.on_tx_event(e)
                 elif t in ("waiting", "recording", "decoding", "result"):
                     self.dec = e
                     if t == "result":
@@ -658,6 +662,33 @@ class App(tk.Tk):
                     self.add_ticker(f"{e['mode']}{snr}  {e['text']}", alert=new, log=False)
         except queue.Empty:
             pass
+
+    def on_tx_event(self, e):
+        """Red light while the PTT is keyed; blue (listening) or amber (waiting) in between."""
+        t, dry = e["type"], self.state == "dry"
+        if t == "tx_start":
+            if not dry:
+                self.set_state("tx", f"Transmitting {e['mode'].upper()} on {e['freq_mhz']:.4f} MHz "
+                                     f"({e['seconds']:.0f} s). Press Stop to end after this transmission.")
+        elif t == "tx_end":
+            swr = e.get("swr")
+            if swr:
+                self.print(f"  sent {e['label']}, SWR {swr:.1f}\n")
+            if not dry and self.state == "tx":
+                gaps = bool(getattr(self.runner, "listen_in_gaps", False))
+                self.set_state("listen" if gaps else "air",
+                               "Listening until the next transmission. Press Stop to end." if gaps else
+                               "Waiting for the next transmission. Press Stop to end.")
+        elif t == "swr_trip":
+            msg = (f"SWR {e['swr']:.1f} on {e['freq_mhz']:.4f} MHz is above your limit of {e['limit']:.1f}.\n\n"
+                   f"Uranus dropped the PTT at once and will not transmit on this band again until you press "
+                   f"ON AIR again. Check the antenna, feedline and tuner for this band.")
+            self.print(f"\n!! HIGH SWR {e['swr']:.1f} on {e['freq_mhz']:.4f} MHz - PTT dropped, band stopped\n")
+            self.add_ticker(f"HIGH SWR {e['swr']:.1f} on {e['freq_mhz']:.4f} MHz - transmitting stopped "
+                            f"on this band", alert=True, log=False)
+            messagebox.showwarning("High SWR - transmit stopped", msg, parent=self)
+        elif t == "swr_stop":
+            self.print("!! Every band has been stopped for high SWR. Not transmitting.\n")
 
     @staticmethod
     def _result_text(e):
@@ -1047,7 +1078,8 @@ class App(tk.Tk):
             self.st_rows[key].config(text=f"{mark}{spec}")
         from .freqplan import BAND_NAMES
         on = [BAND_NAMES.get(b["name"], b["name"]) for b in cfg.get("band", []) if b.get("active", True)]
-        self.st_rows["Bands"].config(text=" · ".join(on) or "none")
+        self.st_rows["Beacon bands"].config(
+            text=" · ".join(on) or "none ticked (only needed to transmit)")
         rep = cfg.get("reporting", {})
         self.v_psk.set(bool(rep.get("pskreporter", False)))
         self.v_server.set("Test server" if rep.get("pskreporter_test_server", True) else "Live")
@@ -1152,8 +1184,7 @@ class App(tk.Tk):
         else:
             from . import rigctl
             print(rigctl.ensure(cfg))
-            radio = HamlibRadio(rc["rigctld_host"], rc["rigctld_port"],
-                                rc.get("audio_device", "default"), max_tx_s=rc.get("max_tx_s", 320, data_mode=rc.get("data_mode", True)))
+            radio = HamlibRadio.from_config(rc)
         runner = scheduler.Runner(cfg, slots, radio)
         runner.listen_in_gaps = bool(cfg.get("receive", {}).get("listen_between_tx", True))
         runner.on_event = self.on_listen_event
@@ -1168,6 +1199,22 @@ class App(tk.Tk):
         self.start(go, "Dry run in progress — nothing is transmitted. Press Stop to end.", "dry")
 
     def on_air(self):
+        from . import scheduler
+        try:
+            _, slots = scheduler.load_config(CONFIG)
+        except Exception as e:              # noqa: BLE001
+            messagebox.showerror("ON AIR", f"Could not read settings:\n{e}", parent=self)
+            return
+        if not scheduler.bands_of(slots):
+            messagebox.showinfo(
+                "Nothing to transmit",
+                "No band and mode is ticked for transmitting yet.\n\n"
+                "1. Click 'Bands and modes'.\n"
+                "2. On a band's tab (for example 20 m), tick 'Use this band', then tick the modes to send "
+                "(for example FT8) and check the frequency.\n"
+                "3. Click Save, then 'Show plan' to check, and 'Dry run' to rehearse without keying.\n"
+                "4. Click ON AIR.", parent=self)
+            return
         if not messagebox.askyesno(
                 "Transmit?", "Start transmitting with your settings?\n\n"
                 "Uranus connects to the radio by itself. Check: the radio is on and plugged in, "
@@ -1209,7 +1256,7 @@ class App(tk.Tk):
                         rig_mode = "FM" if fm and d >= 30 else "USB"
                     if float(rx.get("dial_mhz", 144.49)) < 30.0:
                         rig_mode = "USB"                       # HF: APRS is 300 baud on USB
-                    r = HamlibRadio(rc["rigctld_host"], rc["rigctld_port"], rc.get("audio_device", "default"), data_mode=rc.get("data_mode", True))
+                    r = HamlibRadio.from_config(rc)
                     r.tune(float(rx.get("dial_mhz", 144.49)) * 1e6, rig_mode)
                     r.sock.close()
                     print(f"Radio tuned to {float(rx.get('dial_mhz', 144.49)):.4f} MHz {rig_mode}")
@@ -1408,6 +1455,12 @@ class SetupWindow(tk.Toplevel):
                                           state="readonly", width=20),
             "dry-run: write WAV files only, nothing is sent.\nhamlib: a CAT-controlled rig (start rigctld below).\n"
             "hackrf: a HackRF One SDR (experimental; band-pass filter required).")
+        self.v["max_swr"] = tk.StringVar(value=str(rc.get("max_swr", 2.0)))
+        add("Stop transmitting if SWR above", ttk.Combobox(f, textvariable=self.v["max_swr"],
+                                                           values=["1.5", "2.0", "2.5", "3.0", "0"], width=8),
+            "While transmitting, Uranus reads the radio's SWR meter twice a second. Above this value it drops "
+            "the PTT at once and stops transmitting on that band until you press ON AIR again.\n"
+            "2.0 is a safe limit for most radios. 0 switches the check off (not recommended).")
 
         mf = ttk.Frame(f)
         self.v["hamlib_model"] = tk.StringVar(value=str(rc.get("hamlib_model", "")))
@@ -1455,8 +1508,9 @@ class SetupWindow(tk.Toplevel):
                                 variable=self.v["band_" + b])
             c.pack(side="left", padx=(0, 12))
             Tooltip(c, band_tips[b])
-        add("Bands", bf, "Bands the beacon cycles through. Frequencies you disabled for licensing reasons stay "
-                         "disabled.")
+        add("VHF/UHF beacon bands", bf, "VHF/UHF bands the beacon cycles through. HF bands (20 m and so on) "
+                                        "are ticked in 'Bands and modes'. Frequencies you disabled for "
+                                        "licensing reasons stay disabled.")
 
         lo = next((b.get("transverter_lo_mhz", 0.0) for b in self.cfg.get("band", []) if b["name"] == "1.25m"), 0.0)
         self.v["lo"] = tk.StringVar(value=str(lo))
@@ -1556,8 +1610,17 @@ class SetupWindow(tk.Toplevel):
         if not re.fullmatch(r"[A-Ra-r]{2}\d{2}([A-Xa-x]{2})?", grid):
             messagebox.showerror("Settings", "Grid square: 4 or 6 characters, e.g. GK03 or GK03ec.", parent=self)
             return False
+        try:
+            max_swr = float(self.v["max_swr"].get() or 0)
+            if max_swr != 0 and not 1.1 <= max_swr <= 10:
+                raise ValueError
+        except ValueError:
+            messagebox.showerror("Settings", "SWR limit: a number from 1.1 to 10 (2.0 recommended), or 0 for off.",
+                                 parent=self)
+            return False
         ch = station_keys(call, grid)
-        ch.update({("radio", "profile"): self.v["profile"].get(),
+        ch.update({("radio", "max_swr"): max_swr,
+                   ("radio", "profile"): self.v["profile"].get(),
               ("radio", "backend"): self.v["backend"].get(),
               ("radio", "cat_port"): port_from_label(self.v["cat_port"].get()),
               ("radio", "cat_baud"): int(self.v["cat_baud"].get() or 19200),
@@ -1639,14 +1702,25 @@ def test_transmit(widget, cfg, app):
         from .radio import HamlibRadio
         try:
             rc = cfg["radio"]
-            r = HamlibRadio(host, port, rc.get("audio_device", "default"), data_mode=rc.get("data_mode", True))
+            r = HamlibRadio.from_config({**rc, "rigctld_host": host, "rigctld_port": port})
             r.tune(hz, "USB")
             fs = 12000
             t = np.arange(5 * fs) / fs
             tone = 0.5 * np.sin(2 * np.pi * 1500 * t) * np.minimum(1, np.minimum(t, 5 - t) / 0.05)
-            r.transmit(hz, "USB", tone.astype(np.float32), fs, "test-tone")
+            from .radio import SWRError
+            try:
+                r.transmit(hz, "USB", tone.astype(np.float32), fs, "test-tone")
+            except SWRError as e:
+                r.sock.close()
+                err = (f"Stopped: SWR {e.swr:.1f} is above your limit of {e.limit:.1f}. PTT was dropped at once.\n\n"
+                       "Check the antenna, feedline and tuner for this band before transmitting.")
+                widget.after(0, lambda: messagebox.showwarning("Test transmit - high SWR", err, parent=widget))
+                return
             r.sock.close()
-            msg = ("Sent 5 s of 1500 Hz in USB-D. If the Po meter stayed at zero: raise the Windows volume of "
+            swr = (f"SWR measured: {r.last_swr:.1f} (limit {r.max_swr:.1f}).\n\n" if r.last_swr else
+                   "SWR: the radio did not report it (SWR protection is off for this radio).\n\n"
+                   if r.max_swr else "SWR protection is switched off in Station setup.\n\n")
+            msg = (swr + "Sent 5 s of 1500 Hz in USB-D. If the Po meter stayed at zero: raise the Windows volume of "
                    "'Speakers (USB Audio CODEC)' to about 50%, and on the IC-9100 set DATA MOD = USB and "
                    "USB MOD Level to about 50%.")
             widget.after(0, lambda: messagebox.showinfo("Test transmit", msg, parent=widget))
@@ -2324,7 +2398,7 @@ class ChatWindow(tk.Toplevel):
             else:
                 from . import rigctl
                 self.say(rigctl.ensure(cfg) + "\n", "info")
-                radio = HamlibRadio(rc["rigctld_host"], rc["rigctld_port"], rc.get("audio_device", "default"), data_mode=rc.get("data_mode", True))
+                radio = HamlibRadio.from_config(rc)
             self.engine = self.chatmod.ChatEngine(cfg, radio, self.v_sub.get(), freq,
                                                   0 if self.v_slot.get() == "even" else 1, self.on_event)
         except Exception as e:                # noqa: BLE001

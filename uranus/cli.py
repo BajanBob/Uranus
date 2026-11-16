@@ -156,8 +156,7 @@ def main(argv=None):
         else:
             from . import rigctl
             print(rigctl.ensure(cfg))
-            radio = HamlibRadio(rc["rigctld_host"], rc["rigctld_port"],
-                                rc.get("audio_device", "default"), max_tx_s=rc.get("max_tx_s", 320, data_mode=rc.get("data_mode", True)))
+            radio = HamlibRadio.from_config(rc)
         scheduler.Runner(cfg, slots, radio).run(cycles=1 if args.once else None)
     elif args.cmd == "aprs-wav":
         audio, fs = scheduler.Runner(cfg, slots, None).audio_for(
@@ -262,7 +261,7 @@ def main(argv=None):
         else:
             from . import rigctl
             print(rigctl.ensure(cfg))
-            radio = HamlibRadio(rc["rigctld_host"], rc["rigctld_port"], rc.get("audio_device", "default"), data_mode=rc.get("data_mode", True))
+            radio = HamlibRadio.from_config(rc)
 
         def show(e):
             t = e.get("type")

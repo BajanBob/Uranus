@@ -55,6 +55,8 @@ jobs:
           $caps = ./hamlib/rigctl.exe -m 3068 --dump-caps
           $caps | Select-String "Mode list|Has set Mode|Can set Mode"
           if (-not ($caps | Select-String "PKTUSB")) { Write-Host "::warning::IC-9100 in this Hamlib has no PKTUSB" }
+          $caps | Select-String "Get level"
+          if (-not ($caps | Select-String "Get level.*SWR")) { Write-Host "::warning::IC-9100 in this Hamlib cannot read SWR" } else { Write-Host "IC-9100 SWR reading: supported" }
 
       - name: GUI smoke test (faceplate, wizard, PSK panel, setup, chat)
         timeout-minutes: 6

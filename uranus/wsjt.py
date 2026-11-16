@@ -14,6 +14,8 @@ import subprocess
 import numpy as np
 
 FS = 12000
+# On Windows, run jt9 / wsprd / ft8code etc. without flashing a console window.
+_HIDE = {"creationflags": 0x08000000, "stdin": subprocess.DEVNULL} if os.name == "nt" else {}
 FT8_COSTAS = [3, 1, 4, 0, 6, 5, 2]
 
 
@@ -43,7 +45,7 @@ def _run(tool, message):
     if not exe:
         raise EncoderMissing(f"'{tool}' not found - install WSJT-X "
                              "(Linux: sudo apt install wsjtx; Windows: set WSJTX_BIN to its bin folder)")
-    return subprocess.run([exe, message], capture_output=True, text=True, timeout=20).stdout
+    return subprocess.run([exe, message], capture_output=True, text=True, timeout=20, **_HIDE).stdout
 
 
 def parse_tones(text, count, max_tone):
@@ -194,7 +196,7 @@ def _jt9_decode(x, dial_hz, flag, period, seconds, fs=FS, workdir=None):
     wav = os.path.join(d, "000000_000000.wav")
     _write_wav(wav, x, fs)
     out = subprocess.run([exe, flag, "-p", period, "-d", "3", "-L", "100", "-H", "3200",
-                          "-a", d, "-t", d, wav], capture_output=True, text=True, timeout=60, cwd=d).stdout
+                          "-a", d, "-t", d, wav], capture_output=True, text=True, timeout=60, cwd=d, **_HIDE).stdout
     res = []
     for line in out.splitlines():
         m = _FT8_LINE.match(line)
@@ -220,7 +222,7 @@ def wspr_decode(x, dial_hz, fs=FS, workdir=None, utc=None):
     wav = os.path.join(d, stamp + ".wav")
     _write_wav(wav, x, fs)
     out = subprocess.run([exe, "-f", f"{dial_hz / 1e6:.6f}", "-a", d, wav], capture_output=True, text=True,
-                         timeout=120, cwd=d).stdout
+                         timeout=120, cwd=d, **_HIDE).stdout
     res = []
     for line in out.splitlines():
         if "<DecodeFinished>" in line:

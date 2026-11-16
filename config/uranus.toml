@@ -64,6 +64,7 @@ rigctld_port = 4532
 data_mode = true             # USB-D / FM-D: transmit audio from the radio's USB sound card, not the mic
 audio_device = "default"     # ALSA device of the rig's USB sound card, e.g. "plughw:1,0"
 max_tx_s = 320
+max_swr = 2.0                # drop PTT at once if the radio reports SWR above this (0 = off)
 
 [sdr]                        # HackRF transmit backend (experimental, see docs/SDR.md)
 hackrf_txvga = 10            # 0-47 dB; start LOW

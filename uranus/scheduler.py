@@ -161,6 +161,7 @@ class Runner:
         self.reporter = None                 # PSK Reporter uploader
         self.decoding = False
         self._gap_warned = set()
+        self.blocked = {}                    # band -> SWR that tripped; not used again this session
 
     def audio_for(self, s):
         st = self.st
@@ -198,16 +199,29 @@ class Runner:
         rigmodes = {**RIG_MODE_DEFAULT, **self.cfg.get("rig_modes", {})}
         done = 0
         while cycles is None or done < cycles:
-            for _, band_slots in bands_of(self.slots):
+            for band, band_slots in bands_of(self.slots):
                 for i, s in enumerate(band_slots):
                     if self.stop.is_set():
                         log.info("stopped")
                         return
-                    self._one(s, rigmodes, cs)
+                    if band in self.blocked:
+                        break
+                    self._one(s, rigmodes, cs, band)
                     self._gap(s, time.time() + gap_after(self.cfg, band_slots, i))
+            if self.blocked and all(b in self.blocked for b, _ in bands_of(self.slots)):
+                log.error("every band has been stopped for high SWR - not transmitting any more")
+                self._emit({"type": "swr_stop"})
+                return
             done += 1
 
-    def _one(self, s, rigmodes, cs):
+    def _emit(self, ev):
+        if self.on_event:
+            try:
+                self.on_event(ev)
+            except Exception:                # noqa: BLE001
+                pass
+
+    def _one(self, s, rigmodes, cs, band=None):
         try:
             audio, fs = self.audio_for(s)
         except Exception as e:               # noqa: BLE001
@@ -227,7 +241,21 @@ class Runner:
             self._sleep_until(begin)
         log.info("TX %s at %s UTC", s.label,
                  dt.datetime.now(dt.timezone.utc).strftime("%H:%M:%S.%f")[:-3])
-        self.radio.transmit(s.rig_hz, mode, audio, fs, s.label)
+        from .radio import SWRError
+        self._emit({"type": "tx_start", "label": s.label, "freq_mhz": s.freq_mhz, "mode": s.mode,
+                    "seconds": len(audio) / fs})
+        try:
+            self.radio.transmit(s.rig_hz, mode, audio, fs, s.label)
+        except SWRError as e:
+            key = band if band is not None else s.freq_mhz
+            self.blocked[key] = e.swr
+            log.error("HIGH SWR %.1f (limit %.1f) on %.4f MHz - PTT dropped; no more transmitting on this band "
+                      "until you check the antenna and press ON AIR again", e.swr, e.limit, s.freq_mhz)
+            self._emit({"type": "swr_trip", "swr": e.swr, "limit": e.limit, "freq_mhz": s.freq_mhz,
+                        "band": str(key), "label": s.label})
+        finally:
+            swr = getattr(self.radio, "last_swr", None)
+            self._emit({"type": "tx_end", "label": s.label, "swr": swr})
 
     def _gap(self, s, until):
         """Wait until `until`. If enabled, decode on the slot just sent (same frequency and mode) meanwhile,
