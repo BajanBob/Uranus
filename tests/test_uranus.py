@@ -567,6 +567,39 @@ class TestBandsRadiosSDR(unittest.TestCase):
         barbados = [p for p in w["coordinates"] if all(-59.7 < x < -59.4 and 13.0 < y < 13.4 for x, y in p[0])]
         self.assertTrue(barbados)                              # small islands kept
 
+    def test_noise_filter_learns_whistles_blanks_clicks_spares_signals(self):
+        from uranus.noisefilter import NoiseFilter
+        rng = np.random.default_rng(5)
+        fs, n = 12000, 12000 * 15
+        t = np.arange(n) / fs
+        nf = NoiseFilter(fs)
+
+        def slot(k, clicks=False):
+            x = rng.standard_normal(n) + 4 * np.sin(2 * np.pi * 1180 * t)              # charger whistle
+            x += 4 * np.sin(2 * np.pi * (700 + 300 * (k % 2)) * t) * (t < 12.6)       # FT8-like, moves
+            if clicks:
+                for i in range(0, n - 20, 100):
+                    x[i:i + 4] += 30
+            return x
+        for k in range(4):
+            nf.clean(slot(k))
+        self.assertTrue(any(abs(h - 1180) < 6 for h in nf.stats["line_hz"]), nf.stats)
+        self.assertFalse(any(abs(h - 700) < 6 or abs(h - 1000) < 6 for h in nf.stats["line_hz"]), nf.stats)
+        y = nf.clean(slot(4, clicks=True))
+        self.assertGreater(nf.stats["blanked_pct"], 1.0)
+        spec = np.abs(np.fft.rfft(y))
+        f = np.fft.rfftfreq(n, 1 / fs)
+        sig = spec[np.abs(f - 700) < 2].max()
+        whistle = spec[np.abs(f - 1180) < 2].max()
+        floor = spec[np.abs(f - 1300) < 2].max()
+        self.assertLess(whistle, 2 * floor)                      # whistle down to the noise floor
+        self.assertGreater(sig, 4 * whistle)                     # signal kept
+        quiet = NoiseFilter(fs)
+        z = rng.standard_normal(n)
+        out = quiet.clean(z)
+        self.assertEqual(quiet.stats["blanked_pct"], 0.0)
+        self.assertGreater(np.corrcoef(out[3000:-3000], z[3000:-3000])[0, 1], 0.95)   # plain noise untouched
+
     def test_gui_colour_table_complete(self):
         import ast
         import re as _re

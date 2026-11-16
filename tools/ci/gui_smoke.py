@@ -173,6 +173,12 @@ assert g.load_cfg()["radio"]["cat_baud"] == 19200
 assert [b for b in g.load_cfg()["band"] if b["name"] == "20m"][0]["active"] is True
 snap(w, "4-station-setup.png")
 w.destroy()
+a.v_nf.set(False)
+a.nf_toggle()
+assert g.load_cfg()["receive"]["noise_filter"] is False
+a.v_nf.set(True)
+a.nf_toggle()
+assert g.load_cfg()["receive"]["noise_filter"] is True
 sw = g.TimetableWindow(a)
 sw.geometry("+60+40")
 sw.load_example()

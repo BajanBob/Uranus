@@ -100,6 +100,8 @@ class Listener:
         self.aprs_tail = np.zeros(0)
         self.aprs_seen = {}
         self.cfg = cfg
+        from .noisefilter import NoiseFilter
+        self.nf = NoiseFilter(FS) if rx.get("noise_filter", True) else None
         self.block_t0 = None
         self.follow = None
         self._warned = set()
@@ -281,6 +283,13 @@ class Listener:
                 x = record(rec_s, self.device)
             self.on_event({"type": "decoding", "start": start, **self._info()})
             level_db = float(20 * np.log10(np.sqrt(np.mean(np.square(x))) + 1e-9)) if len(x) else -120.0
+            if self.nf is not None and len(x):
+                try:
+                    x = self.nf.clean(x)
+                    if self.nf.stats.get("lines") or self.nf.stats.get("blanked_pct"):
+                        log.info("%s", self.nf.describe())
+                except Exception as e:                     # noqa: BLE001 - never lose a slot to the filter
+                    log.warning("noise filter skipped: %s", e)
             self.block_t0 = start
             try:
                 mode, res = self.decode(x)

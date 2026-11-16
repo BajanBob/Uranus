@@ -448,9 +448,10 @@ class App(tk.Tk):
                 ("Stop", self.stop, None, "Stop after the current transmission or listening slot."),
             ]),
             ("MAP AND TOOLS", [
-                ("Station map", lambda: self.cli(["map", "--psk", "--open"]), None,
+                ("Station map", self.station_map, None,
                  "Map of stations you heard and stations that heard you (from PSK Reporter). Every station is a "
-                 "pumpkin, coloured by band, ringed blue when online and red when not."),
+                 "pumpkin, coloured by band, ringed blue when online and red when not. Works while listening "
+                 "or ON AIR - no need to stop."),
                 ("Demos and tools...", self.demos_menu, None, "Show plan, dry run, Pumpkin and Cucumber decoding "
                  "demos, the map demo, link budget and the output folder."),
             ]),
@@ -603,6 +604,30 @@ class App(tk.Tk):
         bc.pack(side="left")
         Tooltip(bc, "Alert: a short sound and an orange flash of the status bar on every decode. Every decode "
                     "also scrolls along the bottom of the window.")
+        opt2 = ttk.Frame(dec, style="Card.TFrame")
+        opt2.pack(fill="x", pady=(2, 0))
+        try:
+            nf_on = bool(load_cfg().get("receive", {}).get("noise_filter", True))
+        except Exception:                    # noqa: BLE001
+            nf_on = True
+        self.v_nf = tk.BooleanVar(value=nf_on)
+        nc = ttk.Checkbutton(opt2, text="Noise filter (charger and power-supply noise)", variable=self.v_nf,
+                             style="Card.TCheckbutton", command=self.nf_toggle)
+        nc.pack(side="left")
+        Tooltip(nc, "Cleans each slot before decoding: cuts mains hum, removes steady whistles from chargers and "
+                    "switch-mode supplies (learned over 4 slots), and blanks clicks and buzz pulses. Saved "
+                    "automatically and applied straight away. It can't remove broadband noise sitting under the "
+                    "signals - for that, see the Noise help in the console or docs/NOISE.md.")
+
+    def nf_toggle(self):
+        on = bool(self.v_nf.get())
+        write_keys({("receive", "noise_filter"): on})
+        r = self.runner
+        lis = getattr(r, "nf", None) is not None or hasattr(r, "nf")
+        if lis:
+            from .noisefilter import NoiseFilter
+            r.nf = NoiseFilter() if on else None
+        self.print(f"Noise filter {'on' if on else 'off'}" + (" (applied to the next slot)" if lis else "") + ".\n")
 
     def _dial_options(self, sub):
         from . import freqplan
@@ -1200,6 +1225,22 @@ class App(tk.Tk):
         self.psk_stats.config(text=txt)
 
     # ---------------------------------------------------------- actions
+    def station_map(self):
+        """Build and open the map in the background, alongside Listen / ON AIR (it only reads the spot log)."""
+        from . import cli
+
+        def go():
+            w = _QueueWriter(self.q)
+            with contextlib.redirect_stdout(w), contextlib.redirect_stderr(w):
+                try:
+                    cli.main(["-c", CONFIG, "map", "--psk", "--open"])
+                except SystemExit:
+                    pass
+                except Exception as e:      # noqa: BLE001
+                    print(f"Map: {e}")
+        self.print("\n> station map (built in the background; listening carries on)\n")
+        threading.Thread(target=go, daemon=True, name="map").start()
+
     def cli(self, argv):
         from . import cli
         self.print(f"\n> uranus {' '.join(argv)}\n")
