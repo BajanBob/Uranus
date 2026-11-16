@@ -114,8 +114,9 @@ def render(stations, home_call, home_grid, title="Uranus station map", note="", 
                        "stations": stations, "online_min": online_min, "summary": summary,
                        "modes": propagation.MODES,
                        "generated": time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime())})
-    return TEMPLATE.replace("__TITLE__", html.escape(title)).replace("__NOTE__", html.escape(note)) \
-                   .replace("__DATA__", data.replace("</", "<\\/"))
+    from .watermark import stamp_html
+    return stamp_html(TEMPLATE.replace("__TITLE__", html.escape(title)).replace("__NOTE__", html.escape(note))
+                      .replace("__DATA__", data.replace("</", "<\\/")))
 
 
 TEMPLATE = r"""<!DOCTYPE html>

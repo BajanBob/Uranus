@@ -531,6 +531,31 @@ class TestBandsRadiosSDR(unittest.TestCase):
         self.assertEqual([c[0] for c in calls], ["tx", "listen", "tx"])
         self.assertEqual(Rig.tuned, [(14_074_000.0, "USB")])
 
+    def test_hidden_watermark_html_pdf_and_map(self):
+        import tempfile
+        from uranus import watermark as wm
+        h = wm.stamp_html("<html><head><title>x</title></head><body><p>hi</p></body></html>")
+        self.assertTrue(wm.is_marked_html(h))
+        self.assertEqual(wm.stamp_html(h), h)                  # only once
+        self.assertIn('content="Kammie M Holder FSS, LUTCF, MBLAS"', h)
+        self.assertTrue(wm.is_marked_html(mapgen.render([], "8P5AB", "GK03ec")))
+        try:
+            from pypdf import PdfReader
+            from reportlab.pdfgen import canvas
+        except ImportError:
+            return                                             # PDF tools not installed (CI): HTML checked above
+        d = tempfile.mkdtemp()
+        src = os.path.join(d, "a.pdf")
+        c = canvas.Canvas(src)
+        c.drawString(72, 720, "Uranus")
+        c.save()
+        wm.stamp_pdf(src)
+        r = PdfReader(src)
+        self.assertEqual(r.metadata["/Author"], wm.OWNER)
+        self.assertIn(wm.OWNER, r.pages[0].extract_text())
+        self.assertIn("Uranus", r.pages[0].extract_text())
+        self.assertTrue(wm.is_marked_pdf(src))
+
     def test_aprs_iss_frequency_uses_ariss_path(self):
         from scipy.signal import resample_poly
         from uranus import aprs_rx
