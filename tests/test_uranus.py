@@ -555,6 +555,15 @@ class TestBandsRadiosSDR(unittest.TestCase):
             off, rtt = clock.query("x")
         self.assertAlmostEqual(off, 2.0, delta=0.05)
 
+    def test_gui_colour_table_complete(self):
+        import ast
+        import re as _re
+        src = open("uranus/gui.py", encoding="utf-8").read()
+        i = src.index("C = {")
+        table = ast.literal_eval(src[i + 4:src.index("}", i) + 1])
+        used = set(_re.findall(r'C\["(\w+)"\]', src))
+        self.assertFalse(used - set(table), f"colours used but not defined: {used - set(table)}")
+
     def test_hidden_watermark_html_pdf_and_map(self):
         import tempfile
         from uranus import watermark as wm

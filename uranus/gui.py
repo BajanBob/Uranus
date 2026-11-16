@@ -176,7 +176,8 @@ def write_keys(changes, bands=None):
 C = {                            # v0.16 faceplate: deep blue, with blue / red / green and pink menu items
     "bg": "#081330", "panel": "#0f1f48", "panel2": "#172b60", "rule": "#24407f",
     "ink": "#eef3ff", "muted": "#8ea2cf", "orange": "#9e1a2e",   # "orange" = the accent: dark red
-    "pink": "#9e1a2e", "pink_hi": "#bd2640",                     # dark red menu items (was pink) "green": "#25e39a", "blue": "#2f80ff", "red": "#ff4458",
+    "pink": "#9e1a2e", "pink_hi": "#bd2640",                     # dark red menu items (was pink)
+    "green": "#25e39a", "blue": "#2f80ff", "red": "#ff4458",
     "lilac": "#6aa8ff",                                          # the LISTENING colour - unchanged
     "amber": "#ffcc66", "dark": "#06102a",
 }
