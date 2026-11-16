@@ -220,7 +220,20 @@ def _pick_player(device):
         from .audiodev import resolve
 
         def play_sd(path, audio, fs, dur):
-            sd.play(audio, fs, device=resolve(device, "out"), blocking=True)
+            idx = resolve(device, "out")
+            try:
+                info = sd.query_devices(idx if idx is not None else sd.default.device[1])
+                name = info["name"]
+            except Exception:                # noqa: BLE001
+                name = "?"
+            a = np.asarray(audio, float)
+            rms = 20 * np.log10(np.sqrt(np.mean(a ** 2)) + 1e-12)
+            log.info("TX audio -> '%s'%s, %.0f dBFS for %.1f s", name,
+                     " (Windows default output - NOT the radio?)" if idx is None else "", rms, dur)
+            if idx is None:
+                log.warning("Audio to radio is set to 'default': transmit audio goes to the PC's default speakers. "
+                            "Choose 'Speakers (USB Audio CODEC)' in Station setup.")
+            sd.play(audio, fs, device=idx, blocking=True)
         return play_sd
     except Exception:                        # noqa: BLE001
         pass
