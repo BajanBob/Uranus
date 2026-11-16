@@ -175,8 +175,8 @@ def write_keys(changes, bands=None):
 # --------------------------------------------------------------------- theme
 C = {                            # v0.16 faceplate: deep blue, with blue / red / green and pink menu items
     "bg": "#081330", "panel": "#0f1f48", "panel2": "#172b60", "rule": "#24407f",
-    "ink": "#eef3ff", "muted": "#8ea2cf", "orange": "#ff6fb8",   # "orange" = the pink accent
-    "pink": "#ff6fb8", "green": "#25e39a", "blue": "#2f80ff", "red": "#ff4458",
+    "ink": "#eef3ff", "muted": "#8ea2cf", "orange": "#9e1a2e",   # "orange" = the accent: dark red
+    "pink": "#9e1a2e", "pink_hi": "#bd2640",                     # dark red menu items (was pink) "green": "#25e39a", "blue": "#2f80ff", "red": "#ff4458",
     "lilac": "#6aa8ff",                                          # the LISTENING colour - unchanged
     "amber": "#ffcc66", "dark": "#06102a",
 }
@@ -227,9 +227,9 @@ def apply_theme(root):
         st.configure(f"{name}.TButton", **{k: st.lookup(base, k) for k in ("background", "foreground", "font")
                                           if st.lookup(base, k)}, padding=(12, 5), anchor="w")
         st.map(f"{name}.TButton", background=st.map(base, "background"), foreground=st.map(base, "foreground"))
-    st.configure("Side.TButton", background=C["panel"], foreground=C["pink"], font=(UI, 10, "bold"))
-    st.map("Side.TButton", background=[("pressed", C["pink"]), ("active", C["pink"])],
-           foreground=[("pressed", C["dark"]), ("active", C["dark"])])
+    st.configure("Side.TButton", background=C["pink"], foreground="#ffffff", font=(UI, 10, "bold"))
+    st.map("Side.TButton", background=[("pressed", C["pink_hi"]), ("active", C["pink_hi"])],
+           foreground=[("pressed", "#ffffff"), ("active", "#ffffff")])
     st.configure("TCheckbutton", background=C["bg"], foreground=C["ink"])
     st.map("TCheckbutton", background=[("active", C["bg"])], indicatorcolor=[("selected", C["orange"])])
     st.configure("Card.TCheckbutton", background=C["panel"], foreground=C["ink"], font=(UI, 10, "bold"))
@@ -239,7 +239,7 @@ def apply_theme(root):
            foreground=[("disabled", C["muted"])])
     st.configure("TNotebook", background=C["bg"], borderwidth=0)
     st.configure("TNotebook.Tab", background=C["panel2"], foreground=C["muted"], padding=(8, 5), font=(UI, 9, "bold"))
-    st.map("TNotebook.Tab", background=[("selected", C["panel"])], foreground=[("selected", C["orange"])])
+    st.map("TNotebook.Tab", background=[("selected", C["orange"])], foreground=[("selected", "#ffffff")])
     st.configure("TCombobox", fieldbackground=C["panel2"], background=C["panel2"], foreground=C["ink"],
                  arrowcolor=C["orange"], padding=4)
     st.map("TCombobox", fieldbackground=[("readonly", C["panel2"])], foreground=[("readonly", C["ink"])],
@@ -250,7 +250,7 @@ def apply_theme(root):
     root.option_add("*TCombobox*Listbox.background", C["panel2"])
     root.option_add("*TCombobox*Listbox.foreground", C["ink"])
     root.option_add("*TCombobox*Listbox.selectBackground", C["orange"])
-    root.option_add("*TCombobox*Listbox.selectForeground", C["dark"])
+    root.option_add("*TCombobox*Listbox.selectForeground", "#ffffff")
     root.option_add("*TCombobox*Listbox.font", (UI, 10))
 
 
@@ -784,7 +784,7 @@ class App(tk.Tk):
         self.wf_tags = []
         for i in items[:6]:
             x = max(4, min(self.WF_W - 4, i["freq_hz"] / 3000 * (self.WF_W - 1)))
-            col = C["orange"] if i["mode"] != "Unknown" else C["muted"]
+            col = C["pink_hi"] if i["mode"] != "Unknown" else C["muted"]
             label = f"{i['mode'].split(' ')[0]} {i['confidence']:.0%}" if i["mode"] != "Unknown" else "?"
             self.wf_tags.append(self.wf.create_line(x, 0, x, 8, fill=col, width=2))
             self.wf_tags.append(self.wf.create_text(min(max(x, 30), self.WF_W - 30), 16, text=label, fill=col,
@@ -865,13 +865,13 @@ class App(tk.Tk):
         colour = C["orange"] if n % 2 == 0 else C["panel"]
         self.lamp.itemconfig(self.lamp_dot, fill=colour)
         self.state_lbl.config(text="SIGNAL!" if n % 2 == 0 else STATES.get(self.state, STATES["idle"])[1],
-                              fg=C["orange"] if n % 2 == 0 else C["ink"])
+                              fg="#ffffff" if n % 2 == 0 else C["ink"])
         self.after(350, lambda: self.flash(n - 1))
 
     def _ticker(self):
         bar = tk.Frame(self, bg=C["dark"])
         bar.pack(side="bottom", fill="x")
-        tk.Label(bar, text=" HEARD ", bg=C["orange"], fg=C["dark"], font=(UI, 9, "bold"), padx=6).pack(side="left",
+        tk.Label(bar, text=" HEARD ", bg=C["orange"], fg="#ffffff", font=(UI, 9, "bold"), padx=6).pack(side="left",
                                                                                                        fill="y")
         self.tk_cv = tk.Canvas(bar, height=26, bg=C["dark"], highlightthickness=0)
         self.tk_cv.pack(side="left", fill="x", expand=True)
@@ -1330,8 +1330,8 @@ class App(tk.Tk):
         self.start(go, "Connecting to the radio...")
 
     def demos_menu(self):
-        m = tk.Menu(self, tearoff=0, bg=C["panel2"], fg=C["pink"], activebackground=C["pink"],
-                    activeforeground=C["dark"], font=(UI, 10))
+        m = tk.Menu(self, tearoff=0, bg=C["panel2"], fg="#ffffff", activebackground=C["pink"],
+                    activeforeground="#ffffff", font=(UI, 10))
         for label, cmd in [
                 ("Show plan (next two cycles, nothing sent)", lambda: self.cli(["plan", "--cycles", "2"])),
                 ("Dry run: one cycle, WAV files only", self.dry_run),
@@ -1442,7 +1442,59 @@ def station_keys(call, grid):
     return ch
 
 
-class TimetableWindow(tk.Toplevel):
+class AutoSave:
+    """Mixin for settings windows: every change is saved by itself 0.7 s after the last edit.
+    Problems (e.g. a half-typed callsign) show in the window's status line instead of a pop-up; the change is
+    saved as soon as it is valid. Closing the window saves anything still pending."""
+
+    def autosave_init(self, variables, label):
+        self._as_job, self._as_quiet, self._as_label, self._as_error = None, False, label, ""
+        for v in variables:
+            v.trace_add("write", lambda *a: self._as_sched())
+
+    def _as_sched(self):
+        if self._as_job:
+            self.after_cancel(self._as_job)
+        self._as_job = self.after(700, self._as_run)
+
+    def _as_run(self):
+        self._as_job = None
+        self._as_quiet, self._as_error = True, ""
+        try:
+            ok = self.save()
+        except Exception as e:              # noqa: BLE001
+            ok, self._as_error = False, str(e)
+        finally:
+            self._as_quiet = False
+        try:
+            if ok is False or self._as_error:
+                self._as_label.config(text="Not saved yet: " + (self._as_error or "check the values").split("\n")[0][:90],
+                                      fg=C["amber"])
+            else:
+                self._as_label.config(text="✔ Saved automatically " + time.strftime("%H:%M:%S"), fg=C["green"])
+        except tk.TclError:
+            pass
+        return ok is not False and not self._as_error
+
+    def notify_error(self, title, msg):
+        if self._as_quiet:
+            self._as_error = msg
+            return
+        messagebox.showerror(title, msg, parent=self)
+
+    def autosave_close(self):
+        """Save what is pending, then close (asks only if the last change could not be saved)."""
+        if self._as_job:
+            self.after_cancel(self._as_job)
+            self._as_job = None
+            if not self._as_run():
+                if not messagebox.askyesno("Not saved", f"{self._as_error or 'Some values are not valid.'}\n\n"
+                                           "Close without saving this change?", parent=self):
+                    return
+        self.destroy()
+
+
+class TimetableWindow(AutoSave, tk.Toplevel):
     """Time windows for ON AIR: transmit every N minutes, listen and decode, or pause."""
 
     ACT = {"transmit": "Transmit every", "listen": "Listen and decode", "pause": "Pause"}
@@ -1512,10 +1564,11 @@ class TimetableWindow(tk.Toplevel):
         self.ntp.pack(fill="x", pady=(6, 0))
         sb = ttk.Frame(f)
         sb.pack(fill="x", pady=(12, 0))
-        ttk.Button(sb, text="Save", style="Accent.TButton", command=self.save).pack(side="left")
-        ttk.Button(sb, text="Close", command=self.destroy).pack(side="left", padx=8)
-        self.saved = ttk.Label(sb, text="", style="Muted.TLabel")
-        self.saved.pack(side="left", padx=8)
+        ttk.Button(sb, text="Close", command=self.autosave_close).pack(side="left")
+        self.saved = tk.Label(sb, text="Changes are saved automatically.", bg=C["bg"], fg=C["muted"], font=(UI, 9))
+        self.saved.pack(side="left", padx=10)
+        self.protocol("WM_DELETE_WINDOW", self.autosave_close)
+        self.autosave_init([self.v_on, self.v_clock, self.v_out], self.saved)
         self._preview()
 
     def add_row(self, w):
@@ -1534,8 +1587,10 @@ class TimetableWindow(tk.Toplevel):
         ws.append(rm)
         for col, wd in enumerate(ws):
             wd.grid(row=r, column=col, padx=4, pady=2, sticky="w")
-        for key in ("from", "to", "every"):
+        for key in ("from", "to", "every", "do"):
             v[key].trace_add("write", lambda *a: self._preview())
+            if hasattr(self, "_as_job"):
+                v[key].trace_add("write", lambda *a: self._as_sched())
         ws[2].bind("<<ComboboxSelected>>", lambda e: self._preview())
         Tooltip(ws[0], "Start time, HH:MM (24-hour). Transmit windows send at this time first.")
         Tooltip(ws[1], "End time, HH:MM. 23:59 or 24:00 for the end of the day.")
@@ -1550,6 +1605,8 @@ class TimetableWindow(tk.Toplevel):
             wd.destroy()
         self.rows.remove(row)
         self._preview()
+        if hasattr(self, "_as_job"):
+            self._as_sched()
 
     def load_example(self):
         for row in list(self.rows):
@@ -1596,26 +1653,26 @@ class TimetableWindow(tk.Toplevel):
         try:
             ws = [self.tt.parse(x) for x in self.lines()]
         except ValueError as e:
-            messagebox.showerror("Timetable", str(e), parent=self)
+            self.notify_error("Timetable", str(e))
             return False
         if self.v_on.get() and not ws:
-            messagebox.showerror("Timetable", "Add at least one window, or untick 'Use this timetable'.", parent=self)
+            self.notify_error("Timetable", "Add at least one window, or untick 'Use this timetable'.")
             return False
         err = write_keys({("timetable", "enabled"): bool(self.v_on.get()),
                           ("timetable", "clock"): "utc" if self.v_clock.get() == "UTC" else "local",
                           ("timetable", "outside"): "listen" if self.v_out.get().startswith("Listen") else "pause",
                           ("timetable", "windows"): [w.text() for w in ws]})
         if err:
-            messagebox.showerror("Timetable", err, parent=self)
+            self.notify_error("Timetable", err)
             return False
         tt = self.tt.settings(load_cfg())
         self.saved.config(text="✔ Saved " + time.strftime("%H:%M:%S"))
-        self.app.print(f"\n{self.tt.describe(tt)}\n")
-        self.app.set_state("ok", "Timetable saved. Press ON AIR to start.")
+        if not self._as_quiet:
+            self.app.print(f"\n{self.tt.describe(tt)}\n")
         return True
 
 
-class SetupWindow(tk.Toplevel):
+class SetupWindow(AutoSave, tk.Toplevel):
     """Station setup: radio/SDR, backend, CAT, audio, bands - all from lists, with hover help."""
 
     def __init__(self, app):
@@ -1758,31 +1815,25 @@ class SetupWindow(tk.Toplevel):
                 ("Test transmit", self.test_tx, None, "Send a 5-second 1500 Hz tone through the radio, in its "
                                                     "data mode (USB-D), on the frequency it is tuned to. The power "
                                                     "meter should rise. Asks first."),
-                ("Save settings", self.save, "Accent", "Save everything on this page. Your settings are kept "
-                                                       "when you close Uranus and when you install a new version."),
-                ("Close", self.close, None, "Close this window. If you changed something, Uranus asks whether "
-                                            "to save it.")]:
+                ("Close", self.autosave_close, None, "Close this window. Every change is already saved "
+                                                     "automatically; settings are kept when you close Uranus and "
+                                                     "when you install a new version.")]:
             b = ttk.Button(bb, text=text, command=cmd, style=f"{style}.TButton" if style else "TButton")
             b.pack(side="left", padx=(0, 8))
             Tooltip(b, tip)
-        self.saved_lbl = tk.Label(bb, text="", bg=C["panel"], fg=C["green"], font=(UI, 10, "bold"))
+        self.saved_lbl = tk.Label(bb, text="Changes are saved automatically.", bg=C["panel"], fg=C["muted"],
+                                  font=(UI, 10, "bold"))
         self.saved_lbl.pack(side="left", padx=8)
         self.on_profile(initial=True)
         self.snapshot = self._values()
-        self.protocol("WM_DELETE_WINDOW", self.close)
+        self.autosave_init(list(self.v.values()), self.saved_lbl)
+        self.protocol("WM_DELETE_WINDOW", self.autosave_close)
 
     def _values(self):
         return {k: v.get() for k, v in self.v.items()}
 
     def close(self):
-        if self._values() != self.snapshot:
-            ans = messagebox.askyesnocancel("Station setup", "You changed settings on this page.\n\nSave them "
-                                            "before closing?", parent=self)
-            if ans is None:
-                return
-            if ans and not self.save():
-                return
-        self.destroy()
+        self.autosave_close()
 
     def refresh(self):
         self.ports = serial_ports()
@@ -1830,23 +1881,22 @@ class SetupWindow(tk.Toplevel):
         try:
             lo = float(self.v["lo"].get() or 0)
         except ValueError:
-            messagebox.showerror("Settings", "Transverter LO must be a number in MHz.", parent=self)
+            self.notify_error("Settings", "Transverter LO must be a number in MHz.")
             return False
         call, grid = self.v["call"].get().strip().upper(), self.v["grid"].get().strip()
         if not re.fullmatch(r"[A-Z0-9]{3,6}", call) or not re.search(r"\d", call):
-            messagebox.showerror("Settings", "Callsign: 3 to 6 letters and digits with at least one digit, no '/' "
-                                             "(e.g. 8P5AB).", parent=self)
+            self.notify_error("Settings", "Callsign: 3 to 6 letters and digits with at least one digit, no '/' "
+                                             "(e.g. 8P5AB).")
             return False
         if not re.fullmatch(r"[A-Ra-r]{2}\d{2}([A-Xa-x]{2})?", grid):
-            messagebox.showerror("Settings", "Grid square: 4 or 6 characters, e.g. GK03 or GK03ec.", parent=self)
+            self.notify_error("Settings", "Grid square: 4 or 6 characters, e.g. GK03 or GK03ec.")
             return False
         try:
             max_swr = float(self.v["max_swr"].get() or 0)
             if max_swr != 0 and not 1.1 <= max_swr <= 10:
                 raise ValueError
         except ValueError:
-            messagebox.showerror("Settings", "SWR limit: a number from 1.1 to 10 (2.0 recommended), or 0 for off.",
-                                 parent=self)
+            self.notify_error("Settings", "SWR limit: a number from 1.1 to 10 (2.0 recommended), or 0 for off.")
             return False
         ch = station_keys(call, grid)
         ch.update({("radio", "max_swr"): max_swr,
@@ -1862,15 +1912,15 @@ class SetupWindow(tk.Toplevel):
             ch[("radio", "hamlib_model")] = int(self.v["hamlib_model"].get())
         err = write_keys(ch, {b: self.v["band_" + b].get() for b in self.band_names})
         if err:
-            messagebox.showerror("Settings", err, parent=self)
+            self.notify_error("Settings", err)
             return False
         with open(CONFIG, encoding="utf-8") as fh:
             t = self._set_band_key(fh.read(), "1.25m", "transverter_lo_mhz", lo)
         with open(CONFIG, "w", encoding="utf-8") as fh:
             fh.write(t)
-        self.app.print(f"\nSaved station setup to {CONFIG}\n")
+        if not self._as_quiet:
+            self.app.print(f"\nSaved station setup to {CONFIG}\n")
         self.app.refresh_station()
-        self.app.set_state("ok", "Station setup saved.")
         self.snapshot = self._values()
         self.saved_lbl.config(text="✔ Saved " + time.strftime("%H:%M:%S"))
         return True
@@ -1992,7 +2042,7 @@ MODE_HELP = {
 }
 
 
-class BandsModesWindow(tk.Toplevel):
+class BandsModesWindow(AutoSave, tk.Toplevel):
     """One tab per band: tick each mode on or off and pick its frequency from the band plan."""
 
     def __init__(self, app):
@@ -2060,10 +2110,12 @@ class BandsModesWindow(tk.Toplevel):
                 r += 1
         bb = ttk.Frame(f)
         bb.pack(fill="x", pady=(12, 0))
-        b = ttk.Button(bb, text="Save", style="Accent.TButton", command=self.save)
-        b.pack(side="right")
-        Tooltip(b, "Save. To check the new transmit schedule: Demos and tools → Show plan.")
-        ttk.Button(bb, text="Close", command=self.destroy).pack(side="right", padx=8)
+        ttk.Button(bb, text="Close", command=self.autosave_close).pack(side="right", padx=8)
+        self.saved = tk.Label(bb, text="Changes are saved automatically.", bg=C["bg"], fg=C["muted"], font=(UI, 9))
+        self.saved.pack(side="left")
+        self.protocol("WM_DELETE_WINDOW", self.autosave_close)
+        self.autosave_init(list(self.v_band.values()) + list(self.v_slot.values())
+                           + [fv for fv, _ in self.v_freq.values()], self.saved)
 
     @staticmethod
     def _mhz(text):
@@ -2100,9 +2152,9 @@ class BandsModesWindow(tk.Toplevel):
         for (bn, i), (fv, mode) in self.v_freq.items():
             mhz = self._mhz(fv.get())
             if mhz is None or "outside" in self.fp.check(bn, mode, mhz, self.region):
-                messagebox.showerror("Frequency", f"{bn} {mode.upper()}: '{fv.get()}' is not a frequency inside "
-                                                  f"the {bn} allocation. Not saved.", parent=self)
-                return
+                self.notify_error("Frequency", f"{bn} {mode.upper()}: '{fv.get()}' is not a frequency inside "
+                                                  f"the {bn} allocation. Not saved.")
+                return False
             t = radios.set_slot_key(t, bn, i, "freq_mhz", round(mhz, 4))
         for bn, v in self.v_band.items():
             t = radios.set_band_active(t, bn, v.get())
@@ -2112,14 +2164,14 @@ class BandsModesWindow(tk.Toplevel):
         try:
             tomllib.loads(t)
         except Exception as e:               # noqa: BLE001
-            messagebox.showerror("Settings", f"Not saved: {e}", parent=self)
-            return
+            self.notify_error("Settings", f"Not saved: {e}")
+            return False
         with open(CONFIG, "w", encoding="utf-8") as fh:
             fh.write(t)
         self.app.refresh_station()
-        self.app.set_state("ok", "Bands, modes and frequencies saved. Press ON AIR to transmit.")
-        self.app.print("Bands, modes and frequencies saved.\n")
-        self.destroy()
+        if not self._as_quiet:
+            self.app.print("Bands, modes and frequencies saved.\n")
+        return True
 
 
 # --------------------------------------------------------------------- setup wizard
@@ -2226,7 +2278,7 @@ class SetupWizard(tk.Toplevel):
         i = max(0, min(len(self.pages) - 1, i))
         self.i = i
         for k, lb in enumerate(self.step_lbls):
-            lb.config(fg=C["dark"] if k == i else (C["green"] if k < i else C["muted"]),
+            lb.config(fg="#ffffff" if k == i else (C["green"] if k < i else C["muted"]),
                       bg=C["orange"] if k == i else C["bg"])
         self._clear()
         self.pages[i]()

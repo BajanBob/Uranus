@@ -138,7 +138,7 @@ bm.v_freq[("2m", 9)][0].set(freqplan.find("2m", "pumpkin", 144.285).label())
 bm.v_freq[("2m", 7)][0].set("144.489")
 bm.v_freq[("2m", 4)][0].set(freqplan.find("2m", "aprs", 145.825).label())
 snap(bm, "6-bands-modes.png")
-bm.save()
+assert bm.save() is True
 cfg = g.load_cfg()
 b2 = [b for b in cfg["band"] if b["name"] == "2m"][0]["slot"]
 assert b2[9]["enabled"] is True and b2[5]["enabled"] is False
@@ -186,6 +186,21 @@ sw._preview()
 snap(sw, "7-timetable.png")
 sw.remove_row(sw.rows[-1])
 sw.destroy()
+# auto-save: change a value and let the 0.7 s timer save it without pressing anything
+w2 = g.SetupWindow(a)
+w2.v["max_swr"].set("2.5")
+for _ in range(15):
+    a.update()
+    time.sleep(0.1)
+assert abs(g.load_cfg()["radio"]["max_swr"] - 2.5) < 1e-9, g.load_cfg()["radio"]
+w2.v["call"].set("8P")                     # half-typed: not saved, no pop-up
+for _ in range(15):
+    a.update()
+    time.sleep(0.1)
+assert g.load_cfg()["station"]["callsign"] == "8P5AB"
+assert "Not saved yet" in w2.saved_lbl.cget("text"), w2.saved_lbl.cget("text")
+w2.v["call"].set("8P5AB")
+w2.autosave_close()
 c = g.ChatWindow(a)
 c.v_text.set("test")
 c.estimate()
