@@ -555,6 +555,18 @@ class TestBandsRadiosSDR(unittest.TestCase):
             off, rtt = clock.query("x")
         self.assertAlmostEqual(off, 2.0, delta=0.05)
 
+    def test_map_has_builtin_world_and_no_tile_service(self):
+        h = mapgen.render([], "8P5AB", "GK03ec")
+        self.assertIn('id="world"', h)
+        self.assertNotIn("__WORLD__", h)
+        self.assertNotIn("cartocdn", h)
+        self.assertNotIn("tile.openstreetmap.org", h)
+        from uranus.worldmap import WORLD
+        import json as _j
+        w = _j.loads(WORLD)
+        barbados = [p for p in w["coordinates"] if all(-59.7 < x < -59.4 and 13.0 < y < 13.4 for x, y in p[0])]
+        self.assertTrue(barbados)                              # small islands kept
+
     def test_gui_colour_table_complete(self):
         import ast
         import re as _re

@@ -107,6 +107,9 @@ def demo_spots(now=None):
     return out
 
 
+from .worldmap import WORLD  # noqa: E402
+
+
 def render(stations, home_call, home_grid, title="Uranus station map", note="", online_min=30):
     hl = geo.grid_to_latlon(home_grid)
     summary = propagation.band_summary([s for s in stations if s["online"]] or stations)
@@ -116,7 +119,7 @@ def render(stations, home_call, home_grid, title="Uranus station map", note="", 
                        "generated": time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime())})
     from .watermark import stamp_html
     return stamp_html(TEMPLATE.replace("__TITLE__", html.escape(title)).replace("__NOTE__", html.escape(note))
-                      .replace("__DATA__", data.replace("</", "<\\/")))
+                      .replace("__DATA__", data.replace("</", "<\\/")).replace("__WORLD__", WORLD))
 
 
 TEMPLATE = r"""<!DOCTYPE html>
@@ -131,17 +134,17 @@ TEMPLATE = r"""<!DOCTYPE html>
 :root {
   --bg: #f3f1eb; --ink: #17212b; --muted: #5d6872; --rule: #d3cec2; --panel: #ffffff;
   --b2m: #0b8a6c; --b125: #c93a6b; --b70: #8a3fd0; --online: #1d63d6; --offline: #c8372d; --home: #c7791a;
-  --sea: #e3ebef; --grid: #b9c6cf;
+  --sea: #cfe2ec; --grid: #9fb3bf; --land: #f4f1e6;
   --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
   --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) { --bg:#0f151b; --ink:#e5e1d6; --muted:#97a1aa; --rule:#2b3540; --panel:#151d26;
-    --b2m:#2fc79f; --b125:#ff7aa6; --b70:#b98cff; --online:#5b9bff; --offline:#ff6b5e; --home:#e5a24a; --sea:#132331; --grid:#2c4558; color-scheme: dark; }
+    --b2m:#2fc79f; --b125:#ff7aa6; --b70:#b98cff; --online:#5b9bff; --offline:#ff6b5e; --home:#e5a24a; --sea:#0d1d2b; --grid:#35506a; --land:#1d2b38; color-scheme: dark; }
 }
 :root[data-theme="dark"] { --bg:#0f151b; --ink:#e5e1d6; --muted:#97a1aa; --rule:#2b3540; --panel:#151d26;
-  --b2m:#2fc79f; --b125:#ff7aa6; --b70:#b98cff; --online:#5b9bff; --offline:#ff6b5e; --home:#e5a24a; --sea:#132331; --grid:#2c4558; color-scheme: dark; }
+  --b2m:#2fc79f; --b125:#ff7aa6; --b70:#b98cff; --online:#5b9bff; --offline:#ff6b5e; --home:#e5a24a; --sea:#0d1d2b; --grid:#35506a; --land:#1d2b38; color-scheme: dark; }
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body { background: var(--bg); color: var(--ink); font: 15px/1.45 var(--body); }
@@ -220,6 +223,7 @@ footer { padding: 8px 16px 18px; font: .72rem var(--mono); color: var(--muted); 
 </div>
 <footer id="foot"></footer>
 <script id="data" type="application/json">__DATA__</script>
+<script id="world" type="application/json">__WORLD__</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
 (function () {
@@ -318,21 +322,24 @@ footer { padding: 8px 16px 18px; font: .72rem var(--mono); color: var(--muted); 
     return label(s) + "<br>" + dirTxt(s.dirs) + " · " + esc(s.mode) + " · " + ago(s.ago_min) + " ago<br><b>" + esc(s.likely_name) + "</b> " + s.likely_p + "%";
   }
 
-  // ---------- online: Leaflet on CARTO / OpenStreetMap ----------
+  // ---------- Leaflet on a built-in world map ----------
+  // Map-tile services refuse or watermark pages opened from a file (OpenStreetMap: "Access blocked", CARTO:
+  // "API KEY REQUIRED"), so the land is drawn from Natural Earth outlines embedded in this page.
   if (window.L) {
-    var map = L.map("map", { worldCopyJump: true });
-    // OpenStreetMap's own tile servers refuse pages opened from a file (no Referer header: "Access blocked").
-    // CARTO's basemaps (OpenStreetMap data) accept them; Esri takes over if CARTO can't be reached.
-    var OSM = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
-    var base = L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", { maxZoom: 12,
-      subdomains: "abcd", attribution: OSM + ' &copy; <a href="https://carto.com/attributions">CARTO</a>' }).addTo(map);
-    var failed = 0, swapped = false;
-    base.on("tileerror", function () {
-      if (swapped || ++failed < 4) return;
-      swapped = true; map.removeLayer(base);
-      L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
-        { maxZoom: 12, attribution: "Tiles &copy; Esri &middot; " + OSM }).addTo(map);
+    var map = L.map("map", { worldCopyJump: true, preferCanvas: true, minZoom: 1, maxZoom: 10 });
+    map.setView([H.lat, H.lon], 2);                // a view must exist before shapes are drawn
+    var landStyle = { color: col("--grid"), weight: .6, fillColor: col("--land"), fillOpacity: 1 };
+    var W = JSON.parse(document.getElementById("world").textContent);
+    [-360, 0, 360].forEach(function (dx) {
+      var g = dx ? { type: "MultiPolygon", coordinates: W.coordinates.map(function (p) {
+        return p.map(function (r) { return r.map(function (c) { return [c[0] + dx, c[1]]; }); }); }) } : W;
+      L.geoJSON(g, { style: landStyle, interactive: false }).addTo(map);
     });
+    map.attributionControl.addAttribution("Land: Natural Earth (public domain)");
+    var street = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+      { maxZoom: 12, attribution: "Tiles &copy; Esri" });
+    L.control.layers({ "Built-in world map": L.layerGroup(), "Street map (internet, Esri)": street }, null,
+      { position: "topright" }).addTo(map);
     var pts = [[H.lat, H.lon]], markers = [];
     S.forEach(function (s) {
       L.polyline([[H.lat, H.lon], [s.lat, s.lon]], { color: bandCol(s.band), weight: s.dirs.length > 1 ? 4 : 2, opacity: s.online ? .85 : .35,
