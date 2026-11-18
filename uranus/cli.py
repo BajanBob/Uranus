@@ -345,7 +345,15 @@ def main(argv=None):
                     data += heard
                 except Exception as e:      # noqa: BLE001
                     print(f"PSK Reporter lookup failed: {e}")
+        from . import ping
+        contacts = {} if args.demo else ping.two_way()
+        data += mapgen.contact_spots(contacts)
         stations = mapgen.aggregate(data, home, rep_cfg.get("online_minutes", 30))
+        if args.demo and stations:                 # show what a smashed pumpkin (earlier ping contact) looks like
+            s0 = max(stations, key=lambda x: x["km"])
+            contacts = {s0["call"]: {"time": time.time() - 86400, "they_heard_me": -19, "i_heard_them": -22,
+                                     "km": s0["km"], "submode": "PUMPKIN-15"}}
+        stations = mapgen.mark_contacts(stations, contacts)
         os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
         with open(args.out, "w", encoding="utf-8") as f:
             f.write(mapgen.render(stations, st["callsign"], home, note=note,

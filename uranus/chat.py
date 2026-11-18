@@ -56,6 +56,7 @@ class Reassembler:
 
     def __init__(self, id_memory_s=900):
         self.buf, self.expect, self.last_id, self.id_memory_s = [], 0, None, id_memory_s
+        self.snrs = []
 
     def feed(self, m, now=None):
         """Returns a list of events for one decoded frame."""
@@ -70,14 +71,18 @@ class Reassembler:
                    "snr": m.get("snr")})
         if m["seq"] == 0 and self.buf:
             ev.append({"type": "message", "from": sender, "text": "".join(self.buf).strip() + " [...]", "complete": False})
-            self.buf = []
+            self.buf, self.snrs = [], []
         if m["seq"] != self.expect % 5 and self.buf:
             self.buf.append(" [...] ")
         self.buf.append(m["text"])
+        if m.get("snr") is not None:
+            self.snrs.append(float(m["snr"]))
         self.expect = m["seq"] + 1
         if not m["more"]:
-            ev.append({"type": "message", "from": sender, "text": "".join(self.buf).strip(), "complete": True})
-            self.buf, self.expect = [], 0
+            snr = sum(self.snrs) / len(self.snrs) if self.snrs else None
+            ev.append({"type": "message", "from": sender, "text": "".join(self.buf).strip(), "complete": True,
+                       "snr": snr})
+            self.buf, self.expect, self.snrs = [], 0, []
         return ev
 
 
@@ -105,6 +110,9 @@ class ChatEngine:
         T = (cucumber if self.mode == "cucumber" else pumpkin).SUBMODES[submode]
         self.T = T
         self.frame_s = pumpkin.NSYM * T
+        from . import ping
+        self.ping = ping.PingAgent(self.call, self.grid, lambda t: self.send(t, force_id=True), self.freq_hz,
+                                   submode, on_event=lambda e: self.on_event(e))
 
     def _lo_for(self, freq_mhz):
         band = propagation.band_of(freq_mhz * 1e6)
@@ -113,8 +121,13 @@ class ChatEngine:
                 return float(b.get("transverter_lo_mhz", 0.0))
         return 0.0
 
-    def send(self, text):
-        need_id = time.time() - self.last_id_sent > self.id_every_s
+    def send(self, text, force_id=False):
+        from . import ping
+        p = ping.parse(text)
+        if p and p[0] == "ping":                      # "PING K1ABC" typed by hand works like the Ping button
+            self.ping.pinged[p[1]] = time.time()
+            force_id = True
+        need_id = force_id or time.time() - self.last_id_sent > self.id_every_s
         fr = frames_for(text, self.call, self.grid, need_id)
         if need_id:
             self.last_id_sent = time.time()
@@ -181,6 +194,7 @@ class ChatEngine:
                 for m in self._decode(x):
                     for ev in self.re.feed(m):
                         self.on_event(ev)
+                        self.ping.handle(ev)
 
 
 def demo(text, submode="PUMPKIN-15", level_db=-20.0, call="8P5AB", grid="GK03", seed=None):

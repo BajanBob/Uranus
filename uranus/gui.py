@@ -2851,7 +2851,31 @@ class ChatWindow(tk.Toplevel):
         bdemo.pack(side="left", padx=3)
         Tooltip(bdemo, "Send the typed message through a simulated weak channel and decode it. No radio needed.")
 
+        pr = ttk.Frame(self, padding=(10, 0, 10, 6))
+        pr.pack(fill="x")
+        ttk.Label(pr, text="Ping station").pack(side="left")
+        self.v_ping = tk.StringVar()
+        pe = ttk.Entry(pr, textvariable=self.v_ping, width=10)
+        pe.pack(side="left", padx=(4, 4))
+        pe.bind("<Return>", lambda e: self.ping())
+        bp = ttk.Button(pr, text="Ping", command=self.ping)
+        bp.pack(side="left")
+        Tooltip(bp, "Ask another Uranus station (with its Chat open on this frequency and mode, sending in the "
+                    "other slots) whether two-way contact is possible. It answers by itself with a Pumpkin "
+                    "Report: how strongly it hears you; Uranus answers with how strongly you hear it. Both "
+                    "sides then show the report (SNR each way, date and time, distance) and the station map "
+                    "marks the contact with a smashed pumpkin.")
+        self.v_auto = tk.BooleanVar(value=True)
+        ac = ttk.Checkbutton(pr, text="Answer pings automatically", variable=self.v_auto,
+                             command=lambda: self.engine and setattr(self.engine.ping, "auto_reply",
+                                                                     self.v_auto.get()))
+        ac.pack(side="left", padx=12)
+        bpd = ttk.Button(pr, text="Ping demo", command=self.ping_demo)
+        bpd.pack(side="left")
+        Tooltip(bpd, "Two simulated stations ping each other through a weak channel: see a Pumpkin Report "
+                     "without a radio.")
         self.log = tk.Text(self, bg="#101418", fg="#e5e1d6", font=("Consolas", 10), wrap="word", height=18)
+        self.log.tag_config("report", foreground="#ffcc66", font=("Consolas", 10, "bold"))
         self.log.tag_config("me", foreground="#f0a04b")
         self.log.tag_config("them", foreground="#7fd87f")
         self.log.tag_config("info", foreground="#8c98a4")
@@ -2905,6 +2929,18 @@ class ChatWindow(tk.Toplevel):
                     self.say(f"{stamp}  me: {e['text']}  ({e['frames']} frames, about {e['eta_s'] // 60} min)\n", "me")
                 elif t == "lost":
                     self.say(f"{stamp}  NOT DECODED {e['text']}\n", "info")
+                elif t == "report":
+                    self.say(f"{stamp}  {e['text']}\n", "report")
+                    try:
+                        c = e.get("contact") or {}
+                        self.app.add_ticker(f"PUMPKIN REPORT {c.get('call', '')}: two-way, they hear you "
+                                               f"{c.get('they_heard_me', 0):+d} dB, you hear them "
+                                               f"{c.get('i_heard_them') or 0:+.0f} dB, {c.get('km') or '?'} km",
+                                               alert=True)
+                    except Exception:            # noqa: BLE001
+                        pass
+                elif t in ("ping_in", "ping_out"):
+                    self.say(f"{stamp}  {e['text']}\n", "report" if t == "ping_in" else "me")
                 else:
                     self.say(f"{stamp}  {e.get('text', '')}\n", "info")
         except queue.Empty:
@@ -2958,6 +2994,26 @@ class ChatWindow(tk.Toplevel):
             return
         self.engine.send(text)
         self.v_text.set("")
+
+    def ping(self):
+        call = self.v_ping.get().strip().upper()
+        if not call:
+            messagebox.showinfo("Ping", "Type the other station's callsign first.", parent=self)
+            return
+        if not self.engine:
+            messagebox.showinfo("Ping", "Press Start first (or try Ping demo without a radio).", parent=self)
+            return
+        self.engine.ping.auto_reply = self.v_auto.get()
+        self.engine.ping.ping(call)
+
+    def ping_demo(self):
+        from . import ping as pingmod
+        self.say("Ping demo: 8P5AB pings K1ABC through simulated Pumpkin channels (-18 / -22 dB)...\n", "info")
+
+        def go():
+            for e in pingmod.demo():
+                self.q.put(e)
+        threading.Thread(target=go, daemon=True).start()
 
     def demo(self):
         text = self.v_text.get().strip() or "8P5AB testing chat on 220"

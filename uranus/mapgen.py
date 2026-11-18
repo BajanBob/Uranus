@@ -77,6 +77,31 @@ def aggregate(spots, home_grid, online_min=30, now=None, home_latlon=None, ant_h
     return out
 
 
+def contact_spots(contacts):
+    """Spots (both directions) for two-way Pumpkin ping contacts, so they show on the map with a both-ways line."""
+    out = []
+    for c in contacts.values():
+        if not c.get("grid"):
+            continue
+        base = {"call": c["call"], "grid": c["grid"], "time": c["time"], "freq_hz": c.get("freq_hz", 0),
+                "mode": "PUMPKIN ping"}
+        out.append({**base, "direction": "rx", "snr": c.get("i_heard_them")})
+        out.append({**base, "direction": "heard", "snr": c.get("they_heard_me")})
+    return out
+
+
+def mark_contacts(stations, contacts):
+    """Smashed pumpkin for every station with a previous two-way contact, with its Pumpkin Report."""
+    for st in stations:
+        c = contacts.get(st["call"])
+        if c:
+            st["smashed"] = True
+            st["report"] = {"when": time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(c["time"])),
+                            "they": c.get("they_heard_me"), "me": c.get("i_heard_them"), "km": c.get("km"),
+                            "mode": c.get("submode", "")}
+    return stations
+
+
 def demo_spots(now=None):
     """Clearly labelled sample stations around Barbados on 2 m and 70 cm."""
     now = now or time.time()
@@ -210,6 +235,7 @@ footer { padding: 8px 16px 18px; font: .72rem var(--mono); color: var(--muted); 
   <span><span class="sw" style="background:var(--b125)"></span>1.25 m station</span>
   <span><span class="sw" style="background:var(--b70)"></span>70 cm station</span>
   <span><span class="pkl" data-c="home"></span>your station</span>
+  <span><span class="pkl" data-c="smashed"></span>smashed pumpkin = two-way Pumpkin ping contact before</span>
   <span><span class="ring" style="border-color:var(--online)"></span>online (ring)</span>
   <span><span class="ring" style="border-color:var(--offline)"></span>offline (ring, faded)</span>
   <span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="currentColor" stroke-width="2"/></svg>we heard them</span>
@@ -238,6 +264,7 @@ footer { padding: 8px 16px 18px; font: .72rem var(--mono); color: var(--muted); 
       e.innerHTML = pumpkinSvg(c, null, 16, false);
     });
     document.querySelectorAll(".pkl[data-c=home]").forEach(function (e) { e.innerHTML = pumpkinSvg("#f07c12", null, 16, false); });
+    document.querySelectorAll(".pkl[data-c=smashed]").forEach(function (e) { e.innerHTML = pumpkinSvg("#f07c12", null, 16, false, true); });
   }, 0);
   var css = getComputedStyle(document.documentElement);
   function col(n) { return css.getPropertyValue(n).trim(); }
@@ -251,18 +278,29 @@ footer { padding: 8px 16px 18px; font: .72rem var(--mono); color: var(--muted); 
   function fmtSnr(v) { return (v === null || v === undefined || v !== v || v <= -99) ? "-" : (v > 0 ? "+" : "") + Math.round(v); }
   function ago(m) { return m < 1 ? "now" : m < 60 ? m + " min" : Math.round(m / 60) + " h"; }
   function dirTxt(d) { return d.length > 1 ? "both ways" : d[0] === "rx" ? "we heard" : "heard us"; }
-  function pumpkinSvg(fill, ring, size, faded) {
+  function pumpkinSvg(fill, ring, size, faded, smashed) {
     var o = faded ? .5 : 1;
-    return '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 32 32">' +
-      (ring ? '<circle cx="16" cy="18" r="14" fill="none" stroke="' + ring + '" stroke-width="3" opacity="' + (faded ? .7 : 1) + '"/>' : '') +
+    var rg = ring ? '<circle cx="16" cy="18" r="14" fill="none" stroke="' + ring + '" stroke-width="3" opacity="' + (faded ? .7 : 1) + '"/>' : '';
+    if (smashed) {   // a previous two-way contact: squashed, cracked, seeds spilt, stem knocked over
+      return '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 32 32">' + rg +
+        '<g opacity="' + Math.max(o, .8) + '" stroke="rgba(0,0,0,.4)" stroke-width=".8">' +
+        '<path d="M3 24 C4 17 9 15 13 17 L15 21 L17 16 C21 14 28 16 29 24 C24 27 8 27 3 24Z" fill="' + fill + '"/>' +
+        '<path d="M13 17 L15 21 L17 16 L18.5 20 L20 17" fill="none" stroke="#3a1a05" stroke-width="1.3"/>' +
+        '<path d="M15 21 C14 23 15 25 16 26" fill="none" stroke="#3a1a05" stroke-width="1"/></g>' +
+        '<g fill="#f7e7b0" stroke="rgba(0,0,0,.3)" stroke-width=".4"><ellipse cx="6" cy="28" rx="1.3" ry=".8"/>' +
+        '<ellipse cx="25" cy="28.5" rx="1.3" ry=".8"/><ellipse cx="28.5" cy="26" rx="1.1" ry=".7"/><ellipse cx="2.5" cy="27" rx="1.1" ry=".7"/></g>' +
+        '<path d="M20 14 C22 11 25 10 27 11" stroke="#3f7d2b" stroke-width="2.4" fill="none" stroke-linecap="round"/>' +
+        '<path d="M8 15 l-2 -3 M10 14 l0 -3.5 M24 14 l2.5 -2.5" stroke="' + fill + '" stroke-width="1.4" stroke-linecap="round"/></svg>';
+    }
+    return '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '" viewBox="0 0 32 32">' + rg +
       '<g opacity="' + o + '" stroke="rgba(0,0,0,.35)" stroke-width=".8">' +
       '<ellipse cx="11" cy="19" rx="6" ry="8" fill="' + fill + '"/><ellipse cx="21" cy="19" rx="6" ry="8" fill="' + fill + '"/>' +
       '<ellipse cx="16" cy="19" rx="6.5" ry="8.6" fill="' + fill + '"/></g>' +
       '<path d="M16 11 C15.5 8 16.5 6 18.5 5" stroke="#3f7d2b" stroke-width="2.4" fill="none" stroke-linecap="round" opacity="' + o + '"/>' +
       '<path d="M17.5 7.5 C20 6 22.5 6.5 23.5 8 C21 9 19 8.8 17.5 7.5Z" fill="#5fae3a" opacity="' + o + '"/></svg>';
   }
-  function pumpkinIcon(fill, ring, size, faded) {
-    return L.divIcon({ className: "pk", html: pumpkinSvg(fill, ring, size, faded), iconSize: [size, size],
+  function pumpkinIcon(fill, ring, size, faded, smashed) {
+    return L.divIcon({ className: "pk", html: pumpkinSvg(fill, ring, size, faded, smashed), iconSize: [size, size],
       iconAnchor: [size / 2, size * 18 / 32], popupAnchor: [0, -size / 2], tooltipAnchor: [size / 2 - 2, 0] });
   }
   function overlaps(a, b) { return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom); }
@@ -314,7 +352,7 @@ footer { padding: 8px 16px 18px; font: .72rem var(--mono); color: var(--muted); 
     var tr = document.createElement("tr");
     if (!s.online) tr.className = "off";
     tr.innerHTML = '<td class="call"><span class="ring" style="border-color:' + stCol(s) + ";background:" + bandCol(s.band) + '"></span>' +
-      esc(s.call) + '<div class="dir">' + dirTxt(s.dirs) + " · " + esc(s.mode) + '</div></td><td><span class="chip" style="background:' + bandCol(s.band) + '">' + bandTxt(s.band) +
+      esc(s.call) + '<div class="dir">' + dirTxt(s.dirs) + " · " + esc(s.mode) + (s.smashed ? " · ping contact " + esc(s.report.when) : "") + '</div></td><td><span class="chip" style="background:' + bandCol(s.band) + '">' + bandTxt(s.band) +
       "</span></td><td>" + esc(s.grid) + '</td><td class="n">' + s.km.toLocaleString() + '</td><td class="n">' + s.brg + '°</td><td class="n">' +
       fmtSnr(s.last_snr) + '</td><td class="n">' + fmtSnr(s.best) + '</td><td class="n">' + ago(s.ago_min) + '</td><td class="prop"><b>' +
       esc(s.likely_name) + "</b> " + s.likely_p + "%<small>" + esc((s.why || []).join("; ") || "distance and band") + " · next: " + esc(s.second) + "</small></td>";
@@ -326,8 +364,13 @@ footer { padding: 8px 16px 18px; font: .72rem var(--mono); color: var(--muted); 
   function label(s) {
     return "<b>" + esc(s.call) + "</b> · " + bandTxt(s.band) + "<br>" + fmtSnr(s.last_snr) + " dB · " + s.brg + "° · " + s.km.toLocaleString() + " km";
   }
+  function reportTxt(s) {
+    var r = s.report;
+    return r ? "<br><b>Pumpkin Report</b> " + esc(r.when) + "<br>they heard you " + fmtSnr(r.they) + " dB · you heard them " + fmtSnr(r.me) +
+      " dB" + (r.km !== null && r.km !== undefined ? " · " + r.km.toLocaleString() + " km" : "") : "";
+  }
   function popup(s) {
-    return label(s) + "<br>" + dirTxt(s.dirs) + " · " + esc(s.mode) + " · " + ago(s.ago_min) + " ago<br><b>" + esc(s.likely_name) + "</b> " + s.likely_p + "%";
+    return label(s) + "<br>" + dirTxt(s.dirs) + " · " + esc(s.mode) + " · " + ago(s.ago_min) + " ago<br><b>" + esc(s.likely_name) + "</b> " + s.likely_p + "%" + reportTxt(s);
   }
 
   // ---------- Leaflet on a built-in world map ----------
@@ -356,7 +399,7 @@ footer { padding: 8px 16px 18px; font: .72rem var(--mono); color: var(--muted); 
     L.marker([H.lat, H.lon], { icon: pumpkinIcon("#f07c12", null, 40, false), zIndexOffset: 1000 })
       .addTo(map).bindTooltip(esc(H.call) + " (home)", { permanent: true, direction: "right", className: "lbl" });
     S.forEach(function (s, i) {
-      var m = L.marker([s.lat, s.lon], { icon: pumpkinIcon(bandCol(s.band), stCol(s), 30, !s.online) })
+      var m = L.marker([s.lat, s.lon], { icon: pumpkinIcon(bandCol(s.band), stCol(s), 30, !s.online, s.smashed) })
         .addTo(map).bindPopup(popup(s)).bindTooltip(label(s), { permanent: true, direction: i % 2 ? "left" : "right", className: "lbl" });
       markers.push(m); pts.push([s.lat, s.lon]);
     });
@@ -409,7 +452,7 @@ footer { padding: 8px 16px 18px; font: .72rem var(--mono); color: var(--muted); 
     S.forEach(function (s, i) {
       var q = P(s.lat, s.lon);
       var g = el("g", { transform: "translate(" + (q[0] - 15) + "," + (q[1] - 17) + ") scale(0.9375)" });
-      g.innerHTML = pumpkinSvg(bandCol(s.band), stCol(s), 32, !s.online).replace(/^<svg[^>]*>|<\/svg>$/g, "");
+      g.innerHTML = pumpkinSvg(bandCol(s.band), stCol(s), 32, !s.online, s.smashed).replace(/^<svg[^>]*>|<\/svg>$/g, "");
       var t = document.createElementNS(NS, "title"); t.textContent = popup(s).replace(/<br>/g, "\n").replace(/<[^>]+>/g, ""); g.appendChild(t);
       var left = q[0] > W - 200, dx = left ? -17 : 17, anchor = left ? "end" : "start";
       var lg = document.createElementNS(NS, "g"); svg.appendChild(lg);

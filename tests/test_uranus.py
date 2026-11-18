@@ -1108,6 +1108,52 @@ class TestFaceplateTools(unittest.TestCase):
         userfreqs.remove(cfgp, "ft8", 14.090)
         self.assertFalse([f for f in freqplan.PLAN if f.status == "mine"])
 
+    def test_pumpkin_ping_gives_both_stations_a_report(self):
+        import tempfile
+        from uranus import mapgen, ping
+        self.assertEqual(ping.parse("PING K1ABC"), ("ping", "K1ABC", None))
+        self.assertEqual(ping.parse("R-188P5AB"), ("report", "8P5AB", -18))
+        self.assertEqual(ping.parse("RR+03K1ABC"), ("final", "K1ABC", 3))
+        self.assertIsNone(ping.parse("HELLO THERE"))
+        self.assertLessEqual(len(ping.report_text(-21, "K1ABCD", final=True)), 11)   # one chat frame
+        d = tempfile.mkdtemp()
+        air, evs = {"A": [], "B": []}, {"A": [], "B": []}
+        a = ping.PingAgent("8P5AB", "GK03", air["A"].append, 144.495e6, "PUMPKIN-15", evs["A"].append,
+                           os.path.join(d, "a.jsonl"))
+        b = ping.PingAgent("K1ABC-7", "FN42", air["B"].append, 144.495e6, "PUMPKIN-15", evs["B"].append,
+                           os.path.join(d, "b.jsonl"))
+
+        def deliver(frm, call, grid, agent, snr):
+            while air[frm]:
+                agent.handle({"type": "id", "call": call, "grid": grid})
+                agent.handle({"type": "message", "from": call, "text": air[frm].pop(0), "complete": True,
+                              "snr": snr})
+        a.ping("K1ABC")
+        deliver("A", "8P5AB", "GK03", b, -18)
+        self.assertEqual(air["B"], ["R-188P5AB"])
+        deliver("B", "K1ABC", "FN42", a, -22)
+        deliver("A", "8P5AB", "GK03", b, -18)
+        ra = [e for e in evs["A"] if e["type"] == "report"][0]["contact"]
+        rb = [e for e in evs["B"] if e["type"] == "report"][0]["contact"]
+        self.assertEqual((ra["they_heard_me"], ra["i_heard_them"]), (-18, -22.0))
+        self.assertEqual((rb["they_heard_me"], rb["i_heard_them"]), (-22, -18.0))
+        self.assertTrue(3000 < ra["km"] < 4000 and ra["km"] == rb["km"])
+        self.assertIn("TWO-WAY", ping.describe(ra))
+        # a report nobody asked for is ignored
+        a.handle({"type": "message", "from": "W9XYZ", "text": "R-108P5AB", "complete": True, "snr": -10})
+        self.assertEqual(len([e for e in evs["A"] if e["type"] == "report"]), 1)
+        # the map shows the contact as a smashed pumpkin
+        contacts = ping.two_way(os.path.join(d, "a.jsonl"))
+        st = mapgen.mark_contacts(mapgen.aggregate(mapgen.contact_spots(contacts), "GK03"), contacts)
+        self.assertEqual([(x["call"], x["smashed"], x["dirs"]) for x in st], [("K1ABC", True, ["heard", "rx"])])
+        self.assertIn("smashed", mapgen.render(st, "8P5AB", "GK03"))
+
+    def test_pumpkin_ping_over_the_air_demo(self):
+        from uranus import ping
+        rep = [e for e in ping.demo(seed=1) if e["type"] == "report"]
+        self.assertEqual(len(rep), 1)
+        self.assertTrue(-24 <= rep[0]["contact"]["they_heard_me"] <= -12, rep[0]["contact"])
+
     def test_new_weak_signal_listen_modes(self):
         from uranus import freqplan, monitor, wsjt
         self.assertEqual(set(wsjt.DECODERS), {"ft8", "ft4", "q65", "jt65", "jt9", "fst4", "fst4w"})

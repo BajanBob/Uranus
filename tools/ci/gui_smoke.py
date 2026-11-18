@@ -215,6 +215,11 @@ w2.autosave_close()
 c = g.ChatWindow(a)
 c.v_text.set("test")
 c.estimate()
+from uranus import ping as _ping   # noqa: E402
+for _e in _ping.demo(seed=1):
+    c.q.put(_e)
+c.poll()
+assert "PUMPKIN REPORT" in c.log.get("1.0", "end"), c.log.get("1.0", "end")
 snap(c, "5-chat.png")
 c.close()
 # faceplate tools: weather fax (fed a synthetic chart), scanner, my frequencies, share
