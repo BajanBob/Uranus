@@ -140,7 +140,7 @@ jobs:
             Windows: Uranus-Windows-exe.zip - unzip and double-click Uranus.exe (no Python needed).
             Raspberry Pi: Uranus-RaspberryPi.zip - unzip and run  bash linux/install-pi.sh
             Linux: Uranus-Linux.zip - unzip and run  bash linux/install-linux.sh
-            New in this version: the slot bar shows what Uranus is doing - purple while listening, gold while decoding, red while transmitting (with seconds to go). Deep decode now also uses your callsign and grid (WSJT-X a priori decoding) to pull out weaker replies to you, and a low-audio hint appears below -50 dBFS.
+            New in this version: Q65 decoding - WSJT-X's deepest VHF mode (Q65-60A, 60-second slots) hears signals about 6-7 dB weaker than FT8; choose Q65 under Decode. The slot bar is purple while listening, amber while decoding and red while transmitting, and FT8, FT4 and Q65 use your callsign for a priori decoding.
             Free software under GPL-3.0. Testers wanted worldwide: report results under Issues.
           files: |
             Uranus-Windows-exe.zip

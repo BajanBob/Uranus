@@ -81,10 +81,10 @@ class Listener:
         from . import wsjt as _wsjt
         _wsjt.set_station(self.call, self.grid)       # deep decode: jt9 a priori decoding for our call
         self.mode = {"urc": "pumpkin"}.get(rx.get("mode", "pumpkin"), rx.get("mode", "pumpkin"))
-        default = {"pumpkin": "PUMPKIN-60", "cucumber": "CUCUMBER-60", "ft8": "FT8", "ft4": "FT4", "wspr": "WSPR",
+        default = {"pumpkin": "PUMPKIN-60", "cucumber": "CUCUMBER-60", "ft8": "FT8", "ft4": "FT4", "q65": "Q65", "wspr": "WSPR",
                    "aprs": "APRS", "auto": "AUTO"}.get(self.mode, "UR-60")
         self.submode = rx.get("submode", default)
-        if self.mode in ("ft8", "ft4", "wspr", "aprs", "auto"):
+        if self.mode in ("ft8", "ft4", "q65", "wspr", "aprs", "auto"):
             self.submode = self.mode.upper()
         if self.submode.startswith("URC-"):
             self.submode = "PUMPKIN-" + self.submode.split("-")[1]
@@ -119,6 +119,10 @@ class Listener:
             from . import wsjt
             wsjt.decoder_path("jt9")
             self.T, self.period, self.frame_s = 0.048, 7.5, 6.3 - 4.5  # records 6.3 s of each 7.5 s slot
+        elif self.mode == "q65":
+            from . import wsjt
+            wsjt.decoder_path("jt9")
+            self.T, self.period, self.frame_s = 0.6, 60, 58.0 - 4.5    # Q65-60A: 85 x 0.6 s symbols in a 60 s slot
         elif self.mode == "wspr":
             from . import wsjt
             wsjt.decoder_path("wsprd")
@@ -207,9 +211,10 @@ class Listener:
     def decode(self, x):
         if self.mode == "auto":
             return self._auto(x)
-        if self.mode in ("ft8", "ft4", "wspr"):
+        if self.mode in ("ft8", "ft4", "q65", "wspr"):
             from . import wsjt
-            fn = {"ft8": wsjt.ft8_decode, "ft4": wsjt.ft4_decode, "wspr": wsjt.wspr_decode}[self.mode]
+            fn = {"ft8": wsjt.ft8_decode, "ft4": wsjt.ft4_decode, "q65": wsjt.q65_decode,
+                  "wspr": wsjt.wspr_decode}[self.mode]
             res = fn(x, self.dial_hz)
             for r in res:
                 r["kind"] = "station" if r["call"] and r["grid"] else "message"
@@ -273,7 +278,7 @@ class Listener:
                 if until is not None and start + rec_s + 1.0 > until:
                     break
                 self.on_event({"type": "waiting", "start": start, **self._info()})
-            lead = 0.0 if self.mode in ("ft8", "ft4", "wspr", "aprs", "auto") else 0.3   # slot-aligned audio for WSJT-X decoders
+            lead = 0.0 if self.mode in ("ft8", "ft4", "q65", "wspr", "aprs", "auto") else 0.3   # slot-aligned audio for WSJT-X decoders
             while not self.stop.is_set() and clock.now() < start - lead:
                 self.stop.wait(min(0.5, max(0.01, start - lead - clock.now())))
             if self.stop.is_set():

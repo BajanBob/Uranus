@@ -131,7 +131,7 @@ def wspr_audio(call, grid, dbm, f0=1500.0):
 
 _FT8_LINE = re.compile(r"^\s*(\d{4,6})\s+(-?\d+)\s+(-?\d+\.\d)\s+(\d+)\s+[~#:@+&$]\s+(.+?)\s*$")
 _WSPR_LINE = re.compile(r"(-?\d+)\s+(-?\d+\.\d+)\s+(\d+\.\d{6})\s+(-?\d+)\s+(\S.*?)\s*$")
-_FLAGS = re.compile(r"\s{2,}(\?\s*)?(a\d)?\s*$|\s+\?\s*(a\d)?\s*$|\s+a\d\s*$")
+_FLAGS = re.compile(r"\s+q\d\s*$|\s{2,}(\?\s*)?(a\d)?\s*$|\s+\?\s*(a\d)?\s*$|\s+a\d\s*$")
 _GRID = re.compile(r"^[A-R]{2}\d{2}([A-Xa-x]{2})?$")
 _CALL = re.compile(r"^(?=.*\d)[A-Z0-9/]{3,11}$")
 
@@ -209,7 +209,13 @@ def _station_args():
     return a
 
 
-def _jt9_decode(x, dial_hz, flag, period, seconds, fs=FS, workdir=None):
+def q65_decode(x, dial_hz, fs=FS, workdir=None):
+    """Decode one 60-second Q65-60A slot with WSJT-X's jt9. About 6 to 7 dB deeper than FT8, made for weak and
+    fading VHF paths (tropo scatter, rain scatter, EME). Returns the same dicts as ft8_decode."""
+    return _jt9_decode(x, dial_hz, "-3", "60", 60.0, fs, workdir, extra=("-b", "A"))
+
+
+def _jt9_decode(x, dial_hz, flag, period, seconds, fs=FS, workdir=None, extra=()):
     import tempfile
     exe = decoder_path("jt9")
     n = int(seconds * fs)
@@ -218,7 +224,7 @@ def _jt9_decode(x, dial_hz, flag, period, seconds, fs=FS, workdir=None):
     d = workdir or tempfile.mkdtemp(prefix="uranus_jt9_")
     wav = os.path.join(d, "000000_000000.wav")
     _write_wav(wav, x, fs)
-    out = subprocess.run([exe, flag, "-p", period, "-d", "3", "-L", "100", "-H", "3200", *_station_args(),
+    out = subprocess.run([exe, flag, "-p", period, "-d", "3", "-L", "100", "-H", "3200", *extra, *_station_args(),
                           "-a", d, "-t", d, wav], capture_output=True, text=True, timeout=60, cwd=d, **_HIDE).stdout
     res = []
     for line in out.splitlines():

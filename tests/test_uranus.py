@@ -990,5 +990,32 @@ class TestDeepDecode(unittest.TestCase):
             wsjt.set_station("", "")
 
 
+class TestQ65(unittest.TestCase):
+    def test_q65_listener_uses_60_second_slots_and_jt9_q65(self):
+        import tempfile
+        from unittest import mock
+        from uranus import monitor, wsjt
+        t = open("config/uranus.toml", encoding="utf-8").read().replace('callsign = "N0CALL"', 'callsign = "8P5AB"', 1)
+        cfg = tomllib.loads(t)
+        cfg["receive"] = {"mode": "q65", "dial_mhz": 144.170}
+        with mock.patch.object(wsjt, "decoder_path", return_value="jt9"):
+            lis = monitor.Listener(cfg, spot_path=tempfile.mktemp())
+        self.assertEqual((lis.submode, lis.period), ("Q65", 60))
+        self.assertGreater(lis.frame_s + 4.5, 51)            # records the whole 51 s transmission
+        seen = {}
+        def fake_run(cmd, **kw):
+            seen["cmd"] = cmd
+            return mock.Mock(stdout="0010 -27  0.1 1500 :  8P5AB K1ABC FN42                      q2\n")
+        with mock.patch.object(wsjt, "decoder_path", return_value="jt9"), mock.patch.object(wsjt.subprocess, "run", fake_run):
+            mode, res = lis.decode(np.zeros(58 * wsjt.FS))
+        cmd = seen["cmd"]
+        self.assertEqual(mode, "Q65")
+        self.assertIn("-3", cmd); self.assertEqual(cmd[cmd.index("-p") + 1], "60"); self.assertEqual(cmd[cmd.index("-b") + 1], "A")
+        self.assertEqual(cmd[cmd.index("-c") + 1], "8P5AB")
+        self.assertEqual(res[0]["message"], "8P5AB K1ABC FN42")   # the q2 marker is split off as a flag
+        self.assertEqual((res[0]["call"], res[0]["grid"], res[0]["flags"], res[0]["freq_hz"]), ("K1ABC", "FN42", "q2", 144171500))
+        wsjt.set_station("", "")
+
+
 if __name__ == "__main__":
     unittest.main()

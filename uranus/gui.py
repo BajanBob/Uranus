@@ -181,7 +181,7 @@ C = {                            # v0.16 faceplate: deep blue, with blue / red /
     "lilac": "#6aa8ff",                                          # the LISTENING colour - unchanged
     "amber": "#ffcc66", "dark": "#06102a",
     "purple": "#b07cff",                                         # LISTENING (lamp and slot bar)
-    "gold": "#ffc832",                                           # DECODING (slot bar)
+    "decode": "#ff9f1a",                                         # DECODING: amber (slot bar and heading)
 }
 UI = "Segoe UI" if os.name == "nt" else "DejaVu Sans"
 MONO = "Consolas" if os.name == "nt" else "DejaVu Sans Mono"
@@ -563,7 +563,7 @@ class App(tk.Tk):
         sel.pack(fill="x")
         ttk.Label(sel, text="Decode", style="CardMuted.TLabel").pack(side="left")
         from . import cucumber, pumpkin, urmode
-        subs = ["AUTO", "FT8", "FT4", "WSPR", "APRS"] + list(pumpkin.SUBMODES) + list(cucumber.SUBMODES) + list(urmode.SUBMODES)
+        subs = ["AUTO", "FT8", "FT4", "Q65", "WSPR", "APRS"] + list(pumpkin.SUBMODES) + list(cucumber.SUBMODES) + list(urmode.SUBMODES)
         self.v_sub = tk.StringVar(value="PUMPKIN-60")
         cb = ttk.Combobox(sel, textvariable=self.v_sub, values=subs, state="readonly", width=13)
         cb.pack(side="left", padx=6)
@@ -572,6 +572,8 @@ class App(tk.Tk):
                     "(FT8, FT4, WSPR, JT65, APRS, HF packet, RTTY, PSK31, CW, carriers, voice, Pumpkin, UR) and "
                     "send each to the right decoder by itself."
                     "\nFT8, FT4 and WSPR: decoded with WSJT-X's own decoders (install WSJT-X)."
+                    "\nQ65: WSJT-X's deepest VHF mode (Q65-60A, 60-second slots), about 6-7 dB weaker than FT8. "
+                    "For tropo scatter, rain scatter and EME."
                     "\nAPRS: built-in 1200-baud packet decoder, listens all the time (FM-D, squelch open)."
                     "\nPUMPKIN: SSB rig (USB-D), most sensitive, needs a GPS-locked "
                     "radio at both ends.\nCUCUMBER: any FM radio (FM-D, squelch open), no GPS needed.\nUR: SSB, "
@@ -592,7 +594,7 @@ class App(tk.Tk):
         self.dec_bar = tk.Canvas(dec, height=10, bg=C["panel2"], highlightthickness=0)
         self.dec_bar.pack(fill="x", pady=(2, 4))
         self.dec_fill = self.dec_bar.create_rectangle(0, 0, 0, 10, fill=C["blue"], width=0)
-        Tooltip(self.dec_bar, "Purple: listening (recording the slot). Gold: decoding. Red: transmitting.")
+        Tooltip(self.dec_bar, "Purple: listening (recording the slot). Amber: decoding. Red: transmitting.")
         self.dec_line = tk.Label(dec, text="", bg=C["panel"], fg=C["muted"], font=(UI, 10), anchor="w",
                                  justify="left", wraplength=420)
         self.dec_line.pack(fill="x")
@@ -647,7 +649,7 @@ class App(tk.Tk):
         if hasattr(self, "dial_cb"):
             self.dial_cb.config(values=self._dial_options(sub))
         if mode_changed and mode != "auto":
-            self.v_dial.set({"pumpkin": "144.490", "ur": "144.490", "ft8": "144.174", "ft4": "144.170", "wspr": "144.489",
+            self.v_dial.set({"pumpkin": "144.490", "ur": "144.490", "ft8": "144.174", "ft4": "144.170", "q65": "144.170", "wspr": "144.489",
                              "aprs": "144.390"}.get(mode, self._cucumber_freq()))
         try:
             dial = float(self.v_dial.get().split()[0])
@@ -811,15 +813,15 @@ class App(tk.Tk):
             self.dec_bar.itemconfig(self.dec_fill, fill=C["purple"])
             self.dec_bar.coords(self.dec_fill, 0, 0, w * done, 10)
         elif t == "decoding":
-            self.dec_head.config(text=f"Decoding · {where}", fg=C["gold"])
+            self.dec_head.config(text=f"Decoding · {where}", fg=C["decode"])
             self.dec_line.config(text="Identifying signals by their signatures, then decoding..." if sub == "AUTO"
                                  else f"Searching the recording for {sub} signals"
-                                 + (" with WSJT-X's decoder..." if sub in ("FT8", "FT4", "WSPR") else "..."))
-            # Decoding a slot takes jt9 only a second or two, so a gold block sweeps across while it works
+                                 + (" with WSJT-X's decoder..." if sub in ("FT8", "FT4", "Q65", "WSPR") else "..."))
+            # Decoding a slot takes jt9 only a second or two, so an amber block sweeps across while it works
             phase = (now * 0.9) % 2.0
             pos = phase if phase <= 1 else 2 - phase
             seg = w * 0.28
-            self.dec_bar.itemconfig(self.dec_fill, fill=C["gold"])
+            self.dec_bar.itemconfig(self.dec_fill, fill=C["decode"])
             self.dec_bar.coords(self.dec_fill, pos * (w - seg), 0, pos * (w - seg) + seg, 10)
         elif t == "result":
             self.dec_head.config(text=f"Listening · {where}", fg=C["purple"])
@@ -1172,7 +1174,7 @@ class App(tk.Tk):
         self.update_psk()
         if hasattr(self, "v_sub"):
             sub = rx.get("submode", "PUMPKIN-60")
-            if rx.get("mode") in ("ft8", "ft4", "wspr", "aprs", "auto"):
+            if rx.get("mode") in ("ft8", "ft4", "q65", "wspr", "aprs", "auto"):
                 sub = rx["mode"].upper()
             if sub.startswith("URC-"):
                 sub = "PUMPKIN-" + sub.split("-")[1]
@@ -2091,7 +2093,8 @@ def test_radio_async(widget, cfg, done):
     threading.Thread(target=go, daemon=True).start()
 
 
-MODE_OF = {"PUMPKIN": "pumpkin", "CUCUMBER": "cucumber", "UR": "ur", "FT8": "ft8", "FT4": "ft4", "WSPR": "wspr",
+MODE_OF = {"PUMPKIN": "pumpkin", "CUCUMBER": "cucumber", "UR": "ur", "FT8": "ft8", "FT4": "ft4", "Q65": "q65",
+           "WSPR": "wspr",
            "APRS": "aprs", "AUTO": "auto"}
 
 MODE_HELP = {

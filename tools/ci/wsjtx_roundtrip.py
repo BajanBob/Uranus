@@ -60,4 +60,17 @@ sig = slot / np.sqrt(np.mean(w ** 2)) * np.sqrt(2500 / (fs / 2)) * 10 ** (-20 / 
 res = wsjt.wspr_decode(rng.normal(0, 1, len(slot)) + sig, 144_489_000)
 print("WSPR:", res)
 assert any(r["call"] == "8P5AB" and r["grid"] == "GK03" and r["dbm"] == 23 for r in res), res
+
+# Q65-60A: WSJT-X's own simulator makes a -26 dB slot; Uranus's jt9 wrapper must decode it
+import glob, os, shutil, subprocess, tempfile, wave   # noqa: E401,E402
+if shutil.which("q65sim"):
+    d = tempfile.mkdtemp()
+    subprocess.run(["q65sim", "8P5AB K1ABC FN42", "A", "1500", "0.0", "0.0", "0.0", "1", "60", "1", "1", "-26"],
+                   cwd=d, capture_output=True, check=True)
+    w = wave.open(sorted(glob.glob(os.path.join(d, "*.wav")))[0])
+    q = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2").astype(float) / 32768
+    wsjt.set_station("8P5AB", "GK03")
+    res = wsjt.q65_decode(q, 144_170_000)
+    print("Q65 -26 dB:", res)
+    assert any(r["call"] == "K1ABC" and r["grid"] == "FN42" for r in res), res
 print("WSJT-X round trip OK")
