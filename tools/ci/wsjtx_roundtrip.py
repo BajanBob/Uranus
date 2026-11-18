@@ -82,4 +82,47 @@ sig = slot / np.sqrt(np.mean(qa ** 2)) * np.sqrt(2500 / (fs / 2)) * 10 ** (-24 /
 res = wsjt.q65_decode(rng.normal(0, 1, len(slot)) + sig, 144_170_000)
 print("Q65 TX -24 dB:", res)
 assert any(r["call"] == "8P5AB" and r["grid"] == "GK03" and abs(r["freq_hz"] - 144_171_200) < 5 for r in res), res
+
+
+def sim_wav(args, d=None):
+    d = d or tempfile.mkdtemp()
+    subprocess.run(args, cwd=d, capture_output=True, check=True)
+    w = wave.open(sorted(glob.glob(os.path.join(d, "*.wav")))[0])
+    return np.frombuffer(w.readframes(w.getnframes()), dtype="<i2").astype(float) / 32768
+
+
+# JT65, FST4 and FST4W (receive-only listen modes) from WSJT-X's own simulators
+if shutil.which("jt65sim"):
+    res = wsjt.jt65_decode(sim_wav(["jt65sim", "-n", "1", "-m", "A", "-s", "\\-20", "-f", "1"]), 14_076_000)
+    print("JT65 -20 dB:", res)
+    assert any(r["call"] == "W9XYZ" for r in res), res
+if shutil.which("fst4sim"):
+    res = wsjt.fst4_decode(sim_wav(["fst4sim", "K1JT K9AN EN50", "60", "1500", "0.0", "0.1", "1.0", "1", "-20", "F"]),
+                           474_200)
+    print("FST4 -20 dB:", res)
+    assert any(r["call"] == "K9AN" and r["grid"] == "EN50" for r in res), res
+    res = wsjt.fst4w_decode(sim_wav(["fst4sim", "K1JT FN20 30", "120", "1500", "0.0", "0.1", "1.0", "1", "-27", "T"]),
+                            14_095_600)
+    print("FST4W -27 dB:", res)
+    assert any(r["call"] == "K1JT" and r["grid"] == "FN20" and r["dbm"] == 30 for r in res), res
+
+# AUTO decodes FT8 first: a crowded FT8 slot must come back as FT8 decodes, with no guess left beside them
+import tomllib                                         # noqa: E401,E402
+from uranus import monitor                                   # noqa: E402
+cfg = tomllib.loads(open("config/uranus.toml", encoding="utf-8").read())
+cfg["receive"] = {"mode": "auto", "dial_mhz": 14.074}
+events = []
+lis = monitor.Listener(cfg, spot_path=tempfile.mktemp(), on_event=events.append)
+slot = np.zeros(15 * fs)
+for k, (msg, f0) in enumerate((("CQ 8P5AB GK03", 600.0), ("CQ K1ABC FN42", 1100.0), ("CQ W9XYZ EN37", 1700.0),
+                               ("CQ G4ABC IO91", 2300.0))):
+    a = wsjt.ft8_audio(msg, f0=f0)
+    slot[int(0.5 * fs):int(0.5 * fs) + len(a)] += a / np.sqrt(np.mean(a ** 2))
+x = rng.normal(0, 1, len(slot)) + slot * np.sqrt(2500 / (fs / 2)) * 10 ** (-10 / 20)
+lis.block_t0 = 0.0
+name, res = lis._auto(x)
+calls = sorted(r["call"] for r in res if r["mode_name"] == "FT8")
+print("AUTO:", calls, [(i["mode"], round(i["freq_hz"])) for e in events for i in e["items"]])
+assert calls == ["8P5AB", "G4ABC", "K1ABC", "W9XYZ"], calls
+assert lis.follow is None
 print("WSJT-X round trip OK")

@@ -101,6 +101,14 @@ PLAN = [
         ("160m", 1.8366), ("80m", 3.5686), ("60m", 5.3647), ("40m", 7.0386), ("30m", 10.1387),
         ("20m", 14.0956), ("17m", 18.1046), ("15m", 21.0946), ("12m", 24.9246), ("10m", 28.1246),
         ("6m", 50.293))],
+    *[Freq(band, "jt65", mhz, "All", "standard", "JT65 (WSJT-X default, receive)") for band, mhz in (
+        ("160m", 1.838), ("80m", 3.570), ("40m", 7.076), ("30m", 10.138), ("20m", 14.076), ("17m", 18.102),
+        ("15m", 21.076), ("12m", 24.917), ("10m", 28.076), ("6m", 50.310))],
+    *[Freq(band, "jt9", mhz, "All", "standard", "JT9 (WSJT-X default, receive)") for band, mhz in (
+        ("160m", 1.839), ("80m", 3.572), ("40m", 7.078), ("30m", 10.140), ("20m", 14.078), ("17m", 18.104),
+        ("15m", 21.078), ("12m", 24.919), ("10m", 28.078))],
+    *[Freq(band, "fst4w", mhz, "All", "common", "FST4W-120 shares the WSPR window (receive)") for band, mhz in (
+        ("160m", 1.8366), ("80m", 3.5686), ("40m", 7.0386), ("30m", 10.1387), ("20m", 14.0956))],
     Freq("30m", "aprs", 10.1476, "All", "standard", "HF APRS, 300 baud, USB dial with 1600/1800 Hz tones"),
     Freq("20m", "aprs", 14.1016, "All", "common", "HF packet NET105 (centre 14.1033; '14.105 LSB'), 300 baud"),
 
@@ -150,7 +158,7 @@ PLAN = [
 
 # Occupied bandwidth used for the edge check (kHz): SSB modes stay within 3 kHz of the dial,
 # FM modes occupy a 12.5 kHz channel centred on the frequency.
-_BW_KHZ = {"ft4": 3.0, "q65": 3.0, "aprs": 12.5, "cucumber": 12.5, "ft8": 3.0, "wspr": 3.0, "pumpkin": 3.0, "ur": 3.0}
+_BW_KHZ = {"jt65": 3.0, "jt9": 3.0, "fst4": 3.0, "fst4w": 3.0, "ft4": 3.0, "q65": 3.0, "aprs": 12.5, "cucumber": 12.5, "ft8": 3.0, "wspr": 3.0, "pumpkin": 3.0, "ur": 3.0}
 FM_MODES = ("aprs", "cucumber")
 
 
@@ -158,7 +166,7 @@ def options(band, mode, region="R2"):
     """Frequencies for this band and mode, the region's own first, then 'All', then other regions."""
     order = {region: 0, "All": 1}
     return sorted((f for f in PLAN if f.band == band and f.mode == mode),
-                  key=lambda f: (order.get(f.region, 2), ["standard", "common", "proposed"].index(f.status)))
+                  key=lambda f: (order.get(f.region, 2), {"mine": -1, "standard": 0, "common": 1}.get(f.status, 2)))
 
 
 def find(band, mode, mhz):

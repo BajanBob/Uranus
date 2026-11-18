@@ -358,6 +358,12 @@ class App(tk.Tk):
         self.heard_calls = set()             # stations heard this session, so busy modes alert only once each
         self.ident_seen = set()              # signal types identified this session (AUTO)
         self.wf_tags = []
+        self.wefax_on = False
+        try:
+            from . import userfreqs
+            userfreqs.apply(CONFIG)          # the user's own frequencies join the band plan
+        except Exception:                    # noqa: BLE001
+            pass
         self.next_heard_poll = time.time() + 120
         self.wf_rows = []                    # waterfall rows from the audio thread
         self.wf_img = None
@@ -398,6 +404,7 @@ class App(tk.Tk):
         self.after(600, self._first_run)
         self.after(900, self.start_waterfall)
         self.after(150, self.render_waterfall)
+        self.after(5000, self._pb_tick)
         self.after(40, self.scroll_ticker)
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
@@ -473,6 +480,13 @@ class App(tk.Tk):
                  "Map of stations you heard and stations that heard you (from PSK Reporter). Every station is a "
                  "pumpkin, coloured by band, ringed blue when online and red when not. Works while listening "
                  "or ON AIR - no need to stop."),
+                ("Scanner", self.scanner, None, "Step the radio through every known (and your own) frequency "
+                 "on the bands and modes you tick; stop on a signal for up to 3 minutes or until it goes quiet, "
+                 "with Continue and Ignore."),
+                ("Weather fax", self.weather_fax, None, "Receive HF weather charts (WEFAX) from New Orleans, "
+                 "Boston and other stations; tunes the radio and saves each chart as a picture."),
+                ("Screenshot + share", self.share, None, "Save a picture of this screen, and share Uranus "
+                 "(free to share) by WhatsApp or email."),
                 ("Demos and tools...", self.demos_menu, None, "Show plan, dry run, Pumpkin and Cucumber decoding "
                  "demos, the map demo, link budget and the output folder."),
             ]),
@@ -552,36 +566,45 @@ class App(tk.Tk):
         ttk.Label(top, text="RECEIVER · LIVE AUDIO SPECTRUM", style="CardHead.TLabel").pack(side="left")
         self.wf_info = tk.Label(top, text="", bg=C["panel"], fg=C["muted"], font=(MONO, 9))
         self.wf_info.pack(side="right")
-        row = ttk.Frame(f, style="Card.TFrame")
-        row.pack(fill="x", pady=(6, 0))
-        # waterfall
-        wfbox = ttk.Frame(row, style="Card.TFrame")
-        wfbox.pack(side="left")
-        self.WF_W, self.WF_H = 512, 118
-        self.wf = tk.Canvas(wfbox, width=self.WF_W, height=self.WF_H + 18, bg=C["dark"], highlightthickness=0)
-        self.wf.pack()
-        self.wf_item = self.wf.create_image(0, 0, anchor="nw")
-        for hz in range(0, 3001, 500):
-            x = hz / 3000 * (self.WF_W - 1)
-            self.wf.create_line(x, self.WF_H, x, self.WF_H + 4, fill=C["muted"])
-            self.wf.create_text(min(max(x, 12), self.WF_W - 14), self.WF_H + 11, text=f"{hz}",
-                                fill=C["muted"], font=(MONO, 8))
-        xm = 1500 / 3000 * (self.WF_W - 1)
-        self.wf.create_line(xm, 0, xm, self.WF_H, fill=C["orange"], dash=(2, 4))
-        self.wf_msg = self.wf.create_text(self.WF_W / 2, self.WF_H / 2, text="Starting the waterfall...",
+        self.wf_big = False
+        bb = ttk.Button(top, text="Bigger", command=self.toggle_wf_size)
+        bb.pack(side="left", padx=(12, 0))
+        self.wf_size_btn = bb
+        Tooltip(bb, "Make the spectrum and waterfall taller (press again for the normal size).")
+        # spectrum: tag strip (last 5 minutes) on top, waterfall below, frequency scale at the bottom
+        self.WF_W, self.WF_H, self.TAG_H = 760, 160, 57
+        self.wf_buf = None
+        self.wf = tk.Canvas(f, width=self.WF_W, height=self.TAG_H + self.WF_H + 18, bg=C["dark"],
+                            highlightthickness=0)
+        self.wf.pack(fill="x", pady=(6, 0))
+        self.wf_item = self.wf.create_image(0, self.TAG_H, anchor="nw")
+        self.wf_msg = self.wf.create_text(self.WF_W / 2, self.TAG_H + self.WF_H / 2, text="Starting the waterfall...",
                                           fill=C["muted"], font=(UI, 10))
+        self._wf_layout()
+        self.wf.bind("<Configure>", self._wf_resize)
         Tooltip(self.wf, "Waterfall of the radio's receive audio: about 0 to 3000 Hz above the dial frequency, "
                          "newest at the top. Signals show as bright traces; Pumpkin and FT8 sit near the dashed "
-                         "1500 Hz line. It shows the band segment the radio is tuned to, not the whole band. "
+                         "1500 Hz line. Labels above it stay for 5 minutes: green = decoded station, amber = "
+                         "signal identified by its signature; they fade after a minute. "
                          "Set the IC-9100 to USB-D (or FM-D for Cucumber) with the squelch open.")
+        row = ttk.Frame(f, style="Card.TFrame")
+        row.pack(fill="x", pady=(8, 0))
+        # passband list: everything heard or identified in the last 5 minutes
+        pbf = ttk.Frame(row, style="Card.TFrame")
+        pbf.pack(side="right", fill="y", padx=(16, 0))
+        ttk.Label(pbf, text="PASSBAND · LAST 5 MINUTES", style="CardMuted.TLabel").pack(anchor="w")
+        self.pb_text = tk.Label(pbf, text="Nothing yet.", bg=C["panel"], fg=C["muted"], font=(MONO, 10),
+                                anchor="nw", justify="left", width=44)
+        self.pb_text.pack(fill="both", expand=True)
+        self.pb = {}
         # decoder status
         dec = ttk.Frame(row, style="Card.TFrame")
-        dec.pack(side="left", fill="both", expand=True, padx=(16, 0))
+        dec.pack(side="left", fill="both", expand=True)
         sel = ttk.Frame(dec, style="Card.TFrame")
         sel.pack(fill="x")
         ttk.Label(sel, text="Decode", style="CardMuted.TLabel").pack(side="left")
         from . import cucumber, pumpkin, urmode
-        subs = ["AUTO", "FT8", "FT4", "Q65", "WSPR", "APRS"] + list(pumpkin.SUBMODES) + list(cucumber.SUBMODES) + list(urmode.SUBMODES)
+        subs = ["AUTO", "FT8", "FT4", "Q65", "JT65", "JT9", "FST4", "FST4W", "WSPR", "APRS"] + list(pumpkin.SUBMODES) + list(cucumber.SUBMODES) + list(urmode.SUBMODES)
         self.v_sub = tk.StringVar(value="PUMPKIN-60")
         cb = ttk.Combobox(sel, textvariable=self.v_sub, values=subs, state="readonly", width=13)
         cb.pack(side="left", padx=6)
@@ -592,6 +615,7 @@ class App(tk.Tk):
                     "\nFT8, FT4 and WSPR: decoded with WSJT-X's own decoders (install WSJT-X)."
                     "\nQ65: WSJT-X's deepest VHF mode (Q65-60A, 60-second slots), about 6-7 dB weaker than FT8. "
                     "For tropo scatter, rain scatter and EME."
+                    "\nJT65, JT9, FST4, FST4W: older and LF/HF WSJT-X weak-signal modes, receive only (60 s; FST4W 2 min)."
                     "\nAPRS: built-in 1200-baud packet decoder, listens all the time (FM-D, squelch open)."
                     "\nPUMPKIN: SSB rig (USB-D), most sensitive, needs a GPS-locked "
                     "radio at both ends.\nCUCUMBER: any FM radio (FM-D, squelch open), no GPS needed.\nUR: SSB, "
@@ -604,6 +628,10 @@ class App(tk.Tk):
         de.bind("<<ComboboxSelected>>", lambda e: (self.v_dial.set(self.v_dial.get().split()[0]), self.save_listen()))
         de.bind("<FocusOut>", lambda e: self.save_listen())
         de.bind("<Return>", lambda e: self.save_listen())
+        ab = ttk.Button(sel, text="+", width=2, command=self.my_frequencies)
+        ab.pack(side="left")
+        Tooltip(ab, "Add your own frequency for any band and mode. It joins this list, Bands and modes and the "
+                    "scanner.")
         Tooltip(de, "Dial frequency the radio is tuned to while listening. The list holds the band-plan "
                     "frequencies for the chosen mode on every band; you can also type one. Uranus tunes the radio "
                     "here when you press Listen + decode.")
@@ -667,8 +695,13 @@ class App(tk.Tk):
         if hasattr(self, "dial_cb"):
             self.dial_cb.config(values=self._dial_options(sub))
         if mode_changed and mode != "auto":
-            self.v_dial.set({"pumpkin": "144.490", "ur": "144.490", "ft8": "144.174", "ft4": "144.170", "q65": "144.170", "wspr": "144.489",
-                             "aprs": "144.390"}.get(mode, self._cucumber_freq()))
+            dflt = {"pumpkin": "144.490", "ur": "144.490", "ft8": "144.174", "ft4": "144.170", "q65": "144.170",
+                    "wspr": "144.489", "aprs": "144.390", "jt65": "14.076", "jt9": "14.078",
+                    "fst4w": "14.0956"}.get(mode)
+            if mode == "cucumber":
+                dflt = self._cucumber_freq()
+            if dflt:
+                self.v_dial.set(dflt)
         try:
             dial = float(self.v_dial.get().split()[0])
         except ValueError:
@@ -848,27 +881,114 @@ class App(tk.Tk):
     # ---------------------------------------------------------- AUTO: identified signals
     def on_identified(self, items):
         known = [i for i in items if i["mode"] != "Unknown"]
-        for tag in self.wf_tags:
-            self.wf.delete(tag)
-        self.wf_tags = []
-        for i in items[:6]:
-            x = max(4, min(self.WF_W - 4, i["freq_hz"] / 3000 * (self.WF_W - 1)))
-            col = C["pink_hi"] if i["mode"] != "Unknown" else C["muted"]
-            label = f"{i['mode'].split(' ')[0]} {i['confidence']:.0%}" if i["mode"] != "Unknown" else "?"
-            self.wf_tags.append(self.wf.create_line(x, 0, x, 8, fill=col, width=2))
-            self.wf_tags.append(self.wf.create_text(min(max(x, 30), self.WF_W - 30), 16, text=label, fill=col,
-                                                    font=(UI, 8, "bold")))
-        if known:
-            lines = [f"{i['mode']:<20} {i['freq_hz']:>5.0f} Hz  {i['confidence']:>4.0%}  "
-                     + "; ".join(i["reasons"][:3]) for i in known[:4]]
-            self.dec_last.config(text="Signals in the passband:\n" + "\n".join(lines), fg=C["ink"])
-        elif items:
-            self.dec_last.config(text=f"{len(items)} signal(s), none matching a known signature yet", fg=C["muted"])
+        for i in known:
+            if i["confidence"] >= 0.5:
+                name = i["mode"].split(" ")[0]
+                self._pb_add(name, i["freq_hz"], f"{name} {i['confidence']:.0%}", decoded=False,
+                             detail="; ".join(i["reasons"][:1]))
+        self._draw_tags()
         for i in known:
             if i["mode"] not in self.ident_seen and i["confidence"] >= 0.5:
                 self.ident_seen.add(i["mode"])
                 self.add_ticker(f"IDENTIFIED {i['mode']} at {i['freq_hz']:.0f} Hz ({i['confidence']:.0%}): "
                                 + ", ".join(i["reasons"][:2]), log=False)
+
+    # ---------------------------------------------------------- passband: 5-minute labels and list
+    PB_KEEP_S = 300
+
+    def _pb_add(self, mode, off_hz, label, decoded, detail="", snr=None):
+        """Remember a signal at an audio offset for 5 minutes. A decode replaces identification labels of the
+        same mode near it, so a decoded station is shown by its callsign rather than a guess."""
+        now = time.time()
+        if decoded:
+            for k in [k for k, v in self.pb.items()
+                      if not v["decoded"] and (v["mode"] == mode and abs(v["off"] - off_hz) < 60
+                                               or abs(v["off"] - off_hz) < 30)]:
+                del self.pb[k]
+            key = ("d", mode, label)
+        else:
+            if any(v["decoded"] and v["mode"] == mode and abs(v["off"] - off_hz) < 60 and now - v["t"] < 60
+                   for v in self.pb.values()):
+                return                                   # already shown as a decoded station
+            key = ("i", mode, int(off_hz // 40))
+        self.pb[key] = {"mode": mode, "off": float(off_hz), "label": label, "decoded": decoded, "t": now,
+                        "detail": detail, "snr": snr}
+
+    def _pb_tick(self):
+        try:
+            self._draw_tags()
+        finally:
+            self.after(5000, self._pb_tick)
+
+    def _draw_tags(self):
+        if not hasattr(self, "pb"):
+            return
+        now = time.time()
+        for k in [k for k, v in self.pb.items() if now - v["t"] > self.PB_KEEP_S]:
+            del self.pb[k]
+        self.wf.delete("tag")
+        rows = [[] for _ in range(3)]
+        cw, rh = 7.2, 19
+        for v in sorted(self.pb.values(), key=lambda v: -v["t"]):          # newest get a place first
+            if not 0 <= v["off"] <= 3000:
+                continue
+            x = v["off"] / 3000 * (self.WF_W - 1)
+            w = len(v["label"]) * cw + 8
+            x0 = min(max(x - w / 2, 1), self.WF_W - w - 1)
+            for r, used in enumerate(rows):
+                if all(x0 + w + 3 < a or x0 > b + 3 for a, b in used):
+                    used.append((x0, x0 + w))
+                    break
+            else:
+                continue                                # no room: still in the list on the right
+            fresh = now - v["t"] < 60
+            col = (C["green"] if v["decoded"] else C["decode"]) if fresh else C["muted"]
+            y = 2 + r * rh
+            self.wf.create_rectangle(x0, y, x0 + w, y + rh - 3, fill=C["panel2"], outline=col, tags="tag")
+            self.wf.create_text(x0 + w / 2, y + (rh - 3) / 2, text=v["label"], fill=col if fresh else C["ink"],
+                                font=(MONO, 9, "bold"), tags="tag")
+            self.wf.create_line(x, y + rh - 3, x, self.TAG_H + 6, fill=col, dash=(2, 2), tags="tag")
+        lines = []
+        for v in sorted(self.pb.values(), key=lambda v: -v["t"])[:11]:
+            age = now - v["t"]
+            age = "now" if age < 20 else f"{age:.0f}s" if age < 60 else f"{age / 60:.0f}m"
+            snr = f"{v['snr']:+.0f}" if v.get("snr") is not None else "   "
+            lines.append(f"{age:>4} {v['mode']:<6}{v['off']:>5.0f} {snr:>4} {v['label'][:20]}")
+        self.pb_text.config(text="\n".join(lines) if lines else "Nothing yet.",
+                            fg=C["ink"] if lines else C["muted"])
+
+    def _wf_layout(self):
+        """(Re)draw the frequency scale and centre line for the current size."""
+        self.wf.delete("axis")
+        y0, h = self.TAG_H, self.WF_H
+        self.wf.config(height=y0 + h + 18)
+        for hz in range(0, 3001, 250):
+            x = hz / 3000 * (self.WF_W - 1)
+            major = hz % 500 == 0
+            self.wf.create_line(x, y0 + h, x, y0 + h + (5 if major else 3), fill=C["muted"], tags="axis")
+            if major:
+                self.wf.create_text(min(max(x, 14), self.WF_W - 16), y0 + h + 12, text=f"{hz} Hz" if hz == 1500
+                                    else f"{hz}", fill=C["muted"], font=(MONO, 9), tags="axis")
+        xm = 1500 / 3000 * (self.WF_W - 1)
+        self.wf.create_line(xm, y0, xm, y0 + h, fill=C["orange"], dash=(2, 4), tags="axis")
+        self.wf.create_line(0, y0 - 1, self.WF_W, y0 - 1, fill=C["rule"], tags="axis")
+        self.wf.coords(self.wf_msg, self.WF_W / 2, y0 + h / 2)
+
+    def _wf_resize(self, ev):
+        w = max(320, int(ev.width))
+        if w != self.WF_W:
+            self.WF_W = w
+            self.wf_buf = None
+            self._wf_layout()
+            self._draw_tags()
+
+    def toggle_wf_size(self):
+        self.wf_big = not self.wf_big
+        self.WF_H = 320 if self.wf_big else 160
+        self.wf_size_btn.config(text="Smaller" if self.wf_big else "Bigger")
+        self.wf_buf = None
+        self._wf_layout()
+        self._draw_tags()
 
     # ---------------------------------------------------------- decodes: alert + ticker
     def _home(self):
@@ -901,6 +1021,14 @@ class App(tk.Tk):
         return txt + time.strftime("  %H:%MZ", time.gmtime())
 
     def on_decode(self, sp):
+        try:
+            dial = (self.dec.get("dial_hz") or float(self.v_dial.get().split()[0]) * 1e6)
+            off = float(sp.get("freq_hz") or 0) - dial
+            if sp.get("call") and 0 <= off <= 3000 and sp["mode"] != "APRS":
+                self._pb_add(sp["mode"], off, sp["call"], decoded=True, snr=sp.get("snr"))
+                self._draw_tags()
+        except (ValueError, TypeError, AttributeError):
+            pass
         # FT8 and APRS can bring dozens of stations a minute: alert only for a station new this session
         noisy = sp["mode"] in ("FT8", "APRS", "WSPR")
         new = sp["call"] not in self.heard_calls
@@ -1018,8 +1146,9 @@ class App(tk.Tk):
         if self.wf_mon:
             self.wf_mon.tick()
         rows, self.wf_rows[:] = self.wf_rows[:], []
-        if not hasattr(self, "wf_buf"):
+        if self.wf_buf is None or self.wf_buf.shape != (self.WF_H, self.WF_W):
             self.wf_buf = np.zeros((self.WF_H, self.WF_W), dtype=np.uint8)
+        if not hasattr(self, "wf_lut"):
             stops = [(0, (11, 14, 18)), (.3, (18, 42, 110)), (.55, (40, 125, 205)), (.75, (255, 154, 74)),
                      (.9, (255, 222, 120)), (1, (255, 255, 255))]
             xs = np.linspace(0, 1, 256)
@@ -1138,6 +1267,9 @@ class App(tk.Tk):
         self.handle_events()
 
     def busy(self):
+        if getattr(self, "wefax_on", False):
+            messagebox.showinfo("Busy", "The weather fax receiver is using the radio. Stop it first.")
+            return True
         if self.worker:
             messagebox.showinfo("Busy", "Something is already running. Press Stop first.")
             return True
@@ -1192,7 +1324,7 @@ class App(tk.Tk):
         self.update_psk()
         if hasattr(self, "v_sub"):
             sub = rx.get("submode", "PUMPKIN-60")
-            if rx.get("mode") in ("ft8", "ft4", "q65", "wspr", "aprs", "auto"):
+            if rx.get("mode") in ("ft8", "ft4", "q65", "jt65", "jt9", "fst4", "fst4w", "wspr", "aprs", "auto"):
                 sub = rx["mode"].upper()
             if sub.startswith("URC-"):
                 sub = "PUMPKIN-" + sub.split("-")[1]
@@ -1395,6 +1527,30 @@ class App(tk.Tk):
         up = " and uploading to PSK Reporter" if self.reporter else ""
         self.print(f"\n> listen: decoding from the radio{up}; spots go to out/spots.jsonl\n")
         self.start(go, f"Decoding every slot{up}. Press Stop to end.", "listen")
+
+    def scanner(self):
+        from .gui_tools import ScannerWindow
+        ScannerWindow(self)
+
+    def weather_fax(self):
+        from .gui_tools import WefaxWindow
+        WefaxWindow(self)
+
+    def share(self):
+        from .gui_tools import ShareWindow, screenshot
+        try:
+            path = screenshot(self)
+            self.print(f"Screenshot saved: {path}\n")
+        except Exception as e:              # noqa: BLE001
+            path = ""
+            self.print(f"Screenshot not taken: {e}\n")
+        ShareWindow(self, path)
+
+    def my_frequencies(self):
+        from .gui_tools import FrequencyWindow
+        mode = MODE_OF.get(self.v_sub.get().split("-")[0], "ft8")
+        FrequencyWindow(self, "ft8" if mode == "auto" else mode,
+                        on_change=lambda: self.dial_cb.config(values=self._dial_options(self.v_sub.get())))
 
     def stop(self):
         if self.runner:
@@ -2112,7 +2268,7 @@ def test_radio_async(widget, cfg, done):
 
 
 MODE_OF = {"PUMPKIN": "pumpkin", "CUCUMBER": "cucumber", "UR": "ur", "FT8": "ft8", "FT4": "ft4", "Q65": "q65",
-           "WSPR": "wspr",
+           "WSPR": "wspr", "JT65": "jt65", "JT9": "jt9", "FST4": "fst4", "FST4W": "fst4w",
            "APRS": "aprs", "AUTO": "auto"}
 
 MODE_HELP = {
@@ -2123,6 +2279,14 @@ MODE_HELP = {
     "ft4": "FT4, USB. 7.5-second slots, the fast contest mode of WSJT-X. Needs WSJT-X installed.",
     "q65": "Q65-60A, USB. 60-second slots, WSJT-X's deepest VHF mode (about 6-7 dB below FT8) for tropo, "
            "rain scatter and EME. Sends CQ, call and grid. Needs WSJT-X 2.4 or later installed.",
+    "jt65": "JT65A, USB, receive only. 60-second slots; the older WSJT weak-signal mode still heard on 20 m "
+            "(14.076) and used for EME. Needs WSJT-X installed.",
+    "jt9": "JT9-1, USB, receive only. 60-second slots, only about 16 Hz wide; for 160 m to 10 m when quiet. "
+           "Needs WSJT-X installed.",
+    "fst4": "FST4-60, USB, receive only. 60-second LF/MF/HF weak-signal mode, a few dB deeper than JT9. Type "
+            "the dial you want (most activity is on 2200 m and 630 m). Needs WSJT-X 2.3 or later.",
+    "fst4w": "FST4W-120, USB, receive only. The newer, deeper 2-minute beacon; shares the WSPR window. Needs "
+             "WSJT-X 2.3 or later.",
     "pumpkin": "Pumpkin, USB. Uranus coherent weak-signal mode, down to about -31 dB. Needs a GPS-locked "
                "radio at both ends for full sensitivity.",
     "cucumber": "Cucumber, FM. Pumpkin through an FM radio; decodes far below where voice stops. Agree a "

@@ -74,6 +74,10 @@ def receive_rig_mode(rx):
     return "FM" if rx.get("mode") in ("cucumber", "aprs") else "USB"
 
 
+# Slow modes AUTO may follow for one whole slot of their own, and the listen submode used to do it.
+FOLLOW = {"wspr": "WSPR", "q65": "Q65", "jt65": "JT65", "fst4w": "FST4W", "pumpkin": "", "ur": ""}
+
+
 class Listener:
     def __init__(self, cfg, reporter=None, spot_path=spots.DEFAULT_PATH, on_event=None):
         st, rx = cfg["station"], cfg.get("receive", {})
@@ -82,9 +86,9 @@ class Listener:
         _wsjt.set_station(self.call, self.grid)       # deep decode: jt9 a priori decoding for our call
         self.mode = {"urc": "pumpkin"}.get(rx.get("mode", "pumpkin"), rx.get("mode", "pumpkin"))
         default = {"pumpkin": "PUMPKIN-60", "cucumber": "CUCUMBER-60", "ft8": "FT8", "ft4": "FT4", "q65": "Q65", "wspr": "WSPR",
-                   "aprs": "APRS", "auto": "AUTO"}.get(self.mode, "UR-60")
+                   "jt65": "JT65", "jt9": "JT9", "fst4": "FST4", "fst4w": "FST4W", "aprs": "APRS", "auto": "AUTO"}.get(self.mode, "UR-60")
         self.submode = rx.get("submode", default)
-        if self.mode in ("ft8", "ft4", "q65", "wspr", "aprs", "auto"):
+        if self.mode in ("ft8", "ft4", "q65", "jt65", "jt9", "fst4", "fst4w", "wspr", "aprs", "auto"):
             self.submode = self.mode.upper()
         if self.submode.startswith("URC-"):
             self.submode = "PUMPKIN-" + self.submode.split("-")[1]
@@ -123,6 +127,14 @@ class Listener:
             from . import wsjt
             wsjt.decoder_path("jt9")
             self.T, self.period, self.frame_s = 0.6, 60, 58.0 - 4.5    # Q65-60A: 85 x 0.6 s symbols in a 60 s slot
+        elif self.mode in ("jt65", "jt9", "fst4"):
+            from . import wsjt
+            wsjt.decoder_path("jt9")
+            self.T, self.period, self.frame_s = 0.6, 60, 58.0 - 4.5    # 60-second slots
+        elif self.mode == "fst4w":
+            from . import wsjt
+            wsjt.decoder_path("jt9")
+            self.T, self.period, self.frame_s = 0.6, 120, 116.0 - 4.5  # FST4W-120
         elif self.mode == "wspr":
             from . import wsjt
             wsjt.decoder_path("wsprd")
@@ -140,28 +152,22 @@ class Listener:
             self.frame_s = urmode.NSYM * self.T
 
     def _auto(self, x):
-        """Identify every signal in the block, then send each to the right decoder."""
+        """Decode first, then identify. FT8 is tried on every block (it is by far the busiest mode, and the
+        signature finder mistakes crowded FT8 for JT65, RTTY or UR); signals that turn out to be decoded FT8 or
+        FT4 are relabelled, and only then is anything else sent to its own decoder or followed."""
         from . import signalid, wsjt
         dets = self.memory.update(signalid.identify(x, FS, t0=self.block_t0))
-        self.on_event({"type": "identified", "start": self.block_t0, "items": [
-            {"mode": d.mode, "family": d.family, "freq_hz": d.freq_hz, "bw_hz": d.bw_hz, "confidence": d.confidence,
-             "snr_db": d.snr_db, "reasons": d.reasons, "seen": d.seen} for d in dets]})
-        for d in dets:
-            if d.mode != "Unknown":
-                log.info("IDENTIFIED %s at %.0f Hz (%.0f%%): %s", d.mode, d.freq_hz, 100 * d.confidence,
-                         "; ".join(d.reasons))
         fams = {d.family for d in dets if d.confidence >= 0.4}
         res = []
-        if "ft8" in fams:
-            try:
-                for r in wsjt.ft8_decode(x, self.dial_hz):
-                    r["kind"] = "station" if r["call"] and r["grid"] else "message"
-                    r["mode_name"] = "FT8"
-                    res.append(r)
-            except wsjt.DecoderMissing as e:
-                if "ft8" not in self._warned:
-                    self._warned.add("ft8")
-                    log.warning("FT8 identified but not decoded: %s", e)
+        try:
+            for r in wsjt.ft8_decode(x, self.dial_hz):
+                r["kind"] = "station" if r["call"] and r["grid"] else "message"
+                r["mode_name"] = "FT8"
+                res.append(r)
+        except wsjt.DecoderMissing as e:
+            if "ft8" not in self._warned:
+                self._warned.add("ft8")
+                log.warning("FT8 not decoded in AUTO: %s", e)
         if "ft4" in fams:
             half = int(7.5 * FS)
             for part in (x[:half], x[half:]):           # two FT4 slots in each 15-second block
@@ -175,6 +181,22 @@ class Listener:
                         self._warned.add("ft4")
                         log.warning("FT4 identified but not decoded: %s", e)
                     break
+        decoded = [(r["freq_hz"] - self.dial_hz, r["mode_name"]) for r in res]
+        items, relabelled = [], set()
+        for d in dets:
+            item = {"mode": d.mode, "family": d.family, "freq_hz": d.freq_hz, "bw_hz": d.bw_hz,
+                    "confidence": d.confidence, "snr_db": d.snr_db, "reasons": d.reasons, "seen": d.seen}
+            near = [m for off, m in decoded if abs(off - d.freq_hz) <= max(60.0, d.bw_hz)]
+            if near and d.family not in ("ft8", "ft4"):
+                item.update(mode=near[0], family=near[0].lower(), confidence=1.0,
+                            reasons=[f"decoded as {near[0]} (signature first suggested {d.mode})"])
+                relabelled.add(id(d))
+            items.append(item)
+        self.on_event({"type": "identified", "start": self.block_t0, "items": items})
+        for i in items:
+            if i["mode"] != "Unknown":
+                log.info("IDENTIFIED %s at %.0f Hz (%.0f%%): %s", i["mode"], i["freq_hz"], 100 * i["confidence"],
+                         "; ".join(i["reasons"]))
         for fam, hf in (("aprs", False), ("aprs_hf", True)):
             if fam in fams:
                 from . import aprs_rx, geo
@@ -186,9 +208,15 @@ class Listener:
                         res.append({"call": pkt["source"], "grid": grid, "snr": 0.0, "freq_hz": int(self.dial_hz),
                                     "message": f"{pkt['source']}>{pkt['dest']}: {pkt['info'][:60]}",
                                     "kind": "station" if grid else "message", "mode_name": "APRS"})
-        # longer modes need a whole slot of their own: follow one that keeps appearing
+        # Longer modes need a whole slot of their own: follow one only on strong, repeated evidence, and never
+        # while FT8/FT4 is being decoded in the same block (a busy FT8 band fools the signature finder).
+        busy = any(r["mode_name"] in ("FT8", "FT4") for r in res)
         for d in dets:
-            if d.family in ("wspr", "q65", "pumpkin", "ur") and d.confidence >= 0.5 and d.seen >= 2:
+            if id(d) in relabelled or d.family not in FOLLOW:
+                continue
+            if busy and d.family in ("pumpkin", "ur", "jt65"):
+                continue
+            if d.confidence >= 0.6 and d.seen >= 3:
                 self.follow = d
                 break
         return "AUTO", res
@@ -196,7 +224,7 @@ class Listener:
     def _follow(self, d):
         import copy
         cfg = copy.deepcopy(self.cfg)
-        sub = {"wspr": "WSPR", "q65": "Q65"}.get(d.family, d.mode)
+        sub = FOLLOW.get(d.family) or d.mode
         cfg["receive"] = {**cfg.get("receive", {}), "mode": d.family, "submode": sub}
         log.info("AUTO: following %s at %.0f Hz for one slot", sub, d.freq_hz)
         self.on_event({"type": "following", "mode": sub, "freq_hz": d.freq_hz})
@@ -211,10 +239,9 @@ class Listener:
     def decode(self, x):
         if self.mode == "auto":
             return self._auto(x)
-        if self.mode in ("ft8", "ft4", "q65", "wspr"):
+        if self.mode in ("ft8", "ft4", "q65", "jt65", "jt9", "fst4", "fst4w", "wspr"):
             from . import wsjt
-            fn = {"ft8": wsjt.ft8_decode, "ft4": wsjt.ft4_decode, "q65": wsjt.q65_decode,
-                  "wspr": wsjt.wspr_decode}[self.mode]
+            fn = {**wsjt.DECODERS, "wspr": wsjt.wspr_decode}[self.mode]
             res = fn(x, self.dial_hz)
             for r in res:
                 r["kind"] = "station" if r["call"] and r["grid"] else "message"
@@ -278,7 +305,7 @@ class Listener:
                 if until is not None and start + rec_s + 1.0 > until:
                     break
                 self.on_event({"type": "waiting", "start": start, **self._info()})
-            lead = 0.0 if self.mode in ("ft8", "ft4", "q65", "wspr", "aprs", "auto") else 0.3   # slot-aligned audio for WSJT-X decoders
+            lead = 0.0 if self.mode in ("ft8", "ft4", "q65", "jt65", "jt9", "fst4", "fst4w", "wspr", "aprs", "auto") else 0.3   # slot-aligned audio for WSJT-X decoders
             while not self.stop.is_set() and clock.now() < start - lead:
                 self.stop.wait(min(0.5, max(0.01, start - lead - clock.now())))
             if self.stop.is_set():

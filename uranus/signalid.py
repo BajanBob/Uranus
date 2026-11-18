@@ -49,7 +49,7 @@ def _library():
         Signature("FT4", "ft4", 4, 20.83, 83, 20.83, 4.48, 7.5, 0.5, note="4-GFSK, WSJT-X contest mode"),
         Signature("WSPR", "wspr", 4, 1.465, 6, 1.465, 110.6, 120, 1.0, note="4-FSK beacon, 2-minute slots"),
         Signature("Q65", "q65", 65, 1.667, 108, 1.667, 51.0, 60, 1.0, note="65-FSK, WSJT-X weak-signal VHF (Q65-60A)"),
-        Signature("JT65", "", 65, 2.69, 178, 2.69, 46.8, 60, 1.0, note="65-FSK, WSJT"),
+        Signature("JT65", "jt65", 65, 2.69, 178, 2.69, 46.8, 60, 1.0, note="65-FSK, WSJT"),
         Signature("CW", "", 1, None, 12, None, None, None, None, "keyed", "Morse: one tone keyed on and off"),
         Signature("Carrier", "", 1, None, 3, None, None, None, None, "steady", "unmodulated tone or beacon carrier"),
         Signature("PSK31", "", 1, None, 38, 31.25, None, None, None, "psk", "BPSK, envelope dips 31.25 times a second"),

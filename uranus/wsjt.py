@@ -150,7 +150,7 @@ def wspr_audio(call, grid, dbm, f0=1500.0):
 # radio's audio at 12 kHz, writes it to a WAV and runs the decoder on it, exactly as
 # WSJT-X does internally, then reads the decoded lines.
 
-_FT8_LINE = re.compile(r"^\s*(\d{4,6})\s+(-?\d+)\s+(-?\d+\.\d)\s+(\d+)\s+[~#:@+&$]\s+(.+?)\s*$")
+_FT8_LINE = re.compile(r"^\s*(\d{4,6})\s+(-?\d+)\s+(-?\d+\.\d)\s+(\d+)\s+[~#:@+&$`]\s+(.+?)\s*$")
 _WSPR_LINE = re.compile(r"(-?\d+)\s+(-?\d+\.\d+)\s+(\d+\.\d{6})\s+(-?\d+)\s+(\S.*?)\s*$")
 _FLAGS = re.compile(r"\s+q\d\s*$|\s{2,}(\?\s*)?(a\d)?\s*$|\s+\?\s*(a\d)?\s*$|\s+a\d\s*$")
 _GRID = re.compile(r"^[A-R]{2}\d{2}([A-Xa-x]{2})?$")
@@ -234,6 +234,36 @@ def q65_decode(x, dial_hz, fs=FS, workdir=None):
     """Decode one 60-second Q65-60A slot with WSJT-X's jt9. About 6 to 7 dB deeper than FT8, made for weak and
     fading VHF paths (tropo scatter, rain scatter, EME). Returns the same dicts as ft8_decode."""
     return _jt9_decode(x, dial_hz, "-3", "60", 60.0, fs, workdir, extra=("-b", "A"))
+
+
+def jt65_decode(x, dial_hz, fs=FS, workdir=None):
+    """Decode one 60-second JT65A slot (the HF weak-signal mode before FT8, still used on 20 m and for EME)."""
+    return _jt9_decode(x, dial_hz, "-6", "60", 60.0, fs, workdir)
+
+
+def jt9_decode(x, dial_hz, fs=FS, workdir=None):
+    """Decode one 60-second JT9-1 slot (very narrow, about 16 Hz wide, for LF/MF and quiet HF)."""
+    return _jt9_decode(x, dial_hz, "-9", "60", 60.0, fs, workdir)
+
+
+def fst4_decode(x, dial_hz, fs=FS, workdir=None):
+    """Decode one 60-second FST4-60 slot (LF/MF/HF weak-signal QSO mode, about 3 dB below JT9)."""
+    return _jt9_decode(x, dial_hz, "-7", "60", 60.0, fs, workdir)
+
+
+def fst4w_decode(x, dial_hz, fs=FS, workdir=None):
+    """Decode one 2-minute FST4W-120 beacon slot (the newer, deeper WSPR-like beacon)."""
+    res = _jt9_decode(x, dial_hz, "-W", "120", 120.0, fs, workdir)
+    for r in res:                                # beacon format, like WSPR: CALL GRID dBm
+        p = r["message"].split()
+        if len(p) == 3 and p[2].isdigit() and _GRID.match(p[1][:4].upper()):
+            r.update(call=p[0].strip("<>"), grid=p[1][:4], dbm=int(p[2]))
+    return res
+
+
+# Decoders by listen mode; AUTO and the scanner use these too.
+DECODERS = {"ft8": ft8_decode, "ft4": ft4_decode, "q65": q65_decode, "jt65": jt65_decode, "jt9": jt9_decode,
+            "fst4": fst4_decode, "fst4w": fst4w_decode}
 
 
 def _jt9_decode(x, dial_hz, flag, period, seconds, fs=FS, workdir=None, extra=()):

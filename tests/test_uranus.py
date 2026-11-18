@@ -1041,5 +1041,81 @@ class TestQ65Transmit(unittest.TestCase):
         self.assertEqual([s["freq_mhz"] for s in b2["slot"] if s["mode"] == "wspr"], [144.489])
 
 
+class TestFaceplateTools(unittest.TestCase):
+    def test_wefax_decodes_and_phases_a_chart(self):
+        from uranus import wefax
+        rng = np.random.default_rng(4)
+        prof = np.linspace(0, 1, wefax.WIDTH)
+        prof[:60] = 0
+        img = np.tile(prof, (80, 1))
+        x = np.concatenate([rng.normal(0, .3, int(3.37 * wefax.FS)), wefax.encode(img, f_err_hz=10)])
+        rx = wefax.decode(x + rng.normal(0, 0.5, len(x)))
+        self.assertEqual(len(rx.saved), 1)                      # start tone found, stop tone saved it
+        out = rx.image().astype(float) / 255
+        self.assertGreaterEqual(len(out), 76)
+        self.assertLessEqual(len(out), 84)
+        p = np.median(out, axis=0)
+        self.assertGreater(np.corrcoef(p, prof)[0, 1], 0.98)    # phased: black margin at the left edge
+        self.assertLess(p[:50].mean(), 0.15)
+
+    def test_wefax_ignores_noise_and_dial_offset(self):
+        from uranus import wefax
+        rx = wefax.decode(np.random.default_rng(1).normal(0, 1, 60 * wefax.FS))
+        self.assertEqual(rx.saved, [])
+        self.assertEqual(rx.state, "idle")
+        self.assertAlmostEqual(wefax.dial_mhz(8503.9), 8.502)
+        self.assertTrue(any(s[1] == "NMG" and s[2] == 12789.9 for s in wefax.STATIONS))
+
+    def test_scanner_dwells_on_activity_and_moves_on_when_quiet(self):
+        from uranus import scanner
+        chans = scanner.channels({"20m"}, {"ft8", "jt65"})
+        self.assertEqual([(c.mode, c.mhz) for c in chans], [("ft8", 14.074), ("jt65", 14.076)])
+        calls, events = [], []
+
+        class FakeListener:
+            def __init__(self, cfg, rep, on_event):
+                self.cfg, self.ev = cfg, on_event
+
+            def run(self, slots):
+                rx = self.cfg["receive"]
+                calls.append((rx["mode"], rx["dial_mhz"]))
+                busy = rx["dial_mhz"] == 14.074 and len(calls) < 4
+                self.ev({"type": "result", "count": 3 if busy else 0})
+                if len(calls) > 8:
+                    sc.halt()
+        sc = scanner.Scanner({"receive": {}}, chans, on_event=events.append, tune=lambda ch: "tuned",
+                             listener=FakeListener)
+        sc.run()
+        states = [(e["state"], e["mode"]) for e in events if e["type"] == "scan"]
+        self.assertEqual(states[:3], [("probe", "ft8"), ("dwell", "ft8"), ("ended", "ft8")])
+        self.assertIn(("quiet", "jt65"), states)
+        self.assertEqual(calls[:2], [("auto", 14.074), ("ft8", 14.074)])   # probe with AUTO, dwell in FT8
+        sc2 = scanner.Scanner({"receive": {}}, chans, tune=lambda ch: "", listener=FakeListener)
+        sc2.current = chans[0]
+        sc2.ignore()
+        self.assertIn(chans[0].key, sc2.ignored)
+
+    def test_my_frequencies_join_the_band_plan(self):
+        import tempfile
+        from uranus import freqplan, userfreqs
+        cfgp = os.path.join(tempfile.mkdtemp(), "uranus.toml")
+        self.assertEqual(userfreqs.add(cfgp, "ft8", 14.090, "club net"), "")
+        self.assertIn("outside", userfreqs.add(cfgp, "ft8", 15.0))
+        self.assertEqual(userfreqs.add(cfgp, "wefax", 4.3179, "NMG"), "")
+        mine = [f for f in freqplan.PLAN if f.status == "mine"]
+        self.assertEqual([(f.band, f.mode, f.mhz) for f in mine], [("20m", "ft8", 14.09)])
+        self.assertEqual(freqplan.options("20m", "ft8")[0].status, "mine")
+        userfreqs.remove(cfgp, "ft8", 14.090)
+        self.assertFalse([f for f in freqplan.PLAN if f.status == "mine"])
+
+    def test_new_weak_signal_listen_modes(self):
+        from uranus import freqplan, monitor, wsjt
+        self.assertEqual(set(wsjt.DECODERS), {"ft8", "ft4", "q65", "jt65", "jt9", "fst4", "fst4w"})
+        self.assertEqual([o.mhz for o in freqplan.options("20m", "jt65")], [14.076])
+        self.assertIn("jt65", monitor.FOLLOW)
+        m = wsjt._FT8_LINE.match("0001 -18  0.0 1500 `  K1JT K9AN EN50")
+        self.assertIsNotNone(m)                                 # FST4 lines use a backtick marker
+
+
 if __name__ == "__main__":
     unittest.main()
