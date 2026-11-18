@@ -1154,6 +1154,34 @@ class TestFaceplateTools(unittest.TestCase):
         self.assertEqual(len(rep), 1)
         self.assertTrue(-24 <= rep[0]["contact"]["they_heard_me"] <= -12, rep[0]["contact"])
 
+    def test_signal_id_names_signals_and_interference(self):
+        from uranus import sigint, wefax
+        fs, n = 12000, 15 * 12000
+        t = np.arange(n) / fs
+        rng = np.random.default_rng(3)
+
+        def fsk(baud, shift=170.0):
+            bits = rng.integers(0, 2, int(15 * baud) + 2)
+            f = 1500 + shift / 2 * (2 * bits[(t * baud).astype(int)] - 1)
+            return 0.6 * np.sin(2 * np.pi * np.cumsum(f) / fs)
+
+        def top(x, dial=14.074e6):
+            return [f.name for f in sigint.identify(x, dial_hz=dial, t0=0.0)]
+        noise = lambda: rng.normal(0, 1, n)                     # noqa: E731
+        self.assertEqual(top(noise()), ["Noise only"])
+        hum = noise() + 1.5 * np.sin(2 * np.pi * 100 * t) + 0.8 * np.sin(2 * np.pi * 200 * t)
+        self.assertEqual(top(hum)[0], "Mains hum")
+        self.assertIn("50 Hz", " ".join(sigint.identify(hum)[0].reasons))
+        self.assertEqual(top(fsk(45.45) + 0.5 * noise())[0], "RTTY")
+        self.assertEqual(top(fsk(100) + 0.5 * noise())[0], "SITOR-B / NAVTEX")
+        fx = wefax.encode(np.tile(np.linspace(0, 1, wefax.WIDTH), (60, 1)), start_s=0, stop_s=0)[6 * fs:6 * fs + n]
+        self.assertEqual(top(2 * fx + 0.5 * noise())[0], "WEFAX")
+        two = noise() + .5 * np.sin(2 * np.pi * 1000 * t) + .5 * np.sin(2 * np.pi * 1170 * t)
+        self.assertNotIn("RTTY", top(two))                      # two carriers are not RTTY
+        self.assertIn("NMG", sigint.context(8.502)[0])
+        self.assertIn("WWV", sigint.context(10.0)[0])
+        self.assertIn("What:", sigint.report(sigint.identify(hum), 14.074))
+
     def test_new_weak_signal_listen_modes(self):
         from uranus import freqplan, monitor, wsjt
         self.assertEqual(set(wsjt.DECODERS), {"ft8", "ft4", "q65", "jt65", "jt9", "fst4", "fst4w"})

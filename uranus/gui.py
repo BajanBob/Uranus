@@ -483,6 +483,9 @@ class App(tk.Tk):
                 ("Scanner", self.scanner, None, "Step the radio through every known (and your own) frequency "
                  "on the bands and modes you tick; stop on a signal for up to 3 minutes or until it goes quiet, "
                  "with Continue and Ignore."),
+                ("Signal ID", self.signal_id, None, "What is this I'm hearing? Records 15 seconds and names every "
+                 "signal and kind of interference in the passband: digital modes, CW, RTTY, NAVTEX, weather fax, "
+                 "ALE, voice, mains hum, charger noise."),
                 ("Weather fax", self.weather_fax, None, "Receive HF weather charts (WEFAX) from New Orleans, "
                  "Boston and other stations; tunes the radio and saves each chart as a picture."),
                 ("Screenshot + share", self.share, None, "Save a picture of this screen, and share Uranus "
@@ -978,7 +981,6 @@ class App(tk.Tk):
         w = max(320, int(ev.width))
         if w != self.WF_W:
             self.WF_W = w
-            self.wf_buf = None
             self._wf_layout()
             self._draw_tags()
 
@@ -986,7 +988,6 @@ class App(tk.Tk):
         self.wf_big = not self.wf_big
         self.WF_H = 320 if self.wf_big else 160
         self.wf_size_btn.config(text="Smaller" if self.wf_big else "Bigger")
-        self.wf_buf = None
         self._wf_layout()
         self._draw_tags()
 
@@ -1146,15 +1147,22 @@ class App(tk.Tk):
         if self.wf_mon:
             self.wf_mon.tick()
         rows, self.wf_rows[:] = self.wf_rows[:], []
+        redraw = False
         if self.wf_buf is None or self.wf_buf.shape != (self.WF_H, self.WF_W):
+            old = self.wf_buf
             self.wf_buf = np.zeros((self.WF_H, self.WF_W), dtype=np.uint8)
+            if old is not None and old.size:             # keep the picture when resized: stretch it to fit
+                ri = np.linspace(0, old.shape[0] - 1, self.WF_H).astype(int)
+                ci = np.linspace(0, old.shape[1] - 1, self.WF_W).astype(int)
+                self.wf_buf = old[ri][:, ci]
+                redraw = True
         if not hasattr(self, "wf_lut"):
             stops = [(0, (11, 14, 18)), (.3, (18, 42, 110)), (.55, (40, 125, 205)), (.75, (255, 154, 74)),
                      (.9, (255, 222, 120)), (1, (255, 255, 255))]
             xs = np.linspace(0, 1, 256)
             self.wf_lut = np.stack([np.interp(xs, [p for p, _ in stops], [c[k] for _, c in stops])
                                     for k in range(3)], axis=1).astype(np.uint8)
-        if rows:
+        if rows or redraw:
             for r in rows[-self.WF_H:]:
                 r = np.asarray(r)
                 idx = np.linspace(0, len(r) - 1, self.WF_W).astype(int)
@@ -1531,6 +1539,10 @@ class App(tk.Tk):
     def scanner(self):
         from .gui_tools import ScannerWindow
         ScannerWindow(self)
+
+    def signal_id(self):
+        from .gui_tools import SignalIdWindow
+        SignalIdWindow(self)
 
     def weather_fax(self):
         from .gui_tools import WefaxWindow

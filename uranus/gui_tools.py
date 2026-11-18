@@ -517,3 +517,142 @@ class ShareWindow(tk.Toplevel):
         self.clipboard_clear()
         self.clipboard_append(SHARE_TEXT)
         self.shot_lbl.config(text="Message and link copied: paste them anywhere.")
+
+
+# ===================================================================== signal ID
+class SignalIdWindow(tk.Toplevel):
+    """'What is this I'm hearing?': record the receiver for 15 seconds and name everything in the passband,
+    with what it is, what it sounds like, what to do next, and known users of the dial frequency."""
+
+    SECONDS = 15
+
+    def __init__(self, app):
+        super().__init__(app)
+        self.app = app
+        self.title("Uranus - Signal ID")
+        self.geometry("860x620")
+        self.configure(bg=G.C["bg"])
+        self.q = queue.Queue()
+        self.busy, self.top = False, None
+        f = ttk.Frame(self, padding=12)
+        f.pack(fill="both", expand=True)
+        ttk.Label(f, text="Signal ID - what is this I'm hearing?", style="Big.TLabel").pack(anchor="w")
+        row = ttk.Frame(f)
+        row.pack(fill="x", pady=(8, 4))
+        ttk.Label(row, text="Dial MHz").pack(side="left")
+        self.v_dial = tk.StringVar(value=(app.v_dial.get().split() or ["14.074"])[0])
+        ttk.Entry(row, textvariable=self.v_dial, width=10).pack(side="left", padx=(4, 10))
+        b = ttk.Button(row, text=f"Identify ({self.SECONDS} s)", command=self.identify)
+        b.pack(side="left")
+        G.Tooltip(b, "Records the radio's receive audio for 15 seconds and names every signal and every kind of "
+                     "interference in it: FT8 and friends, CW, RTTY, NAVTEX, weather fax, ALE, voice, carriers, "
+                     "mains hum, charger noise and clicks.")
+        self.v_keep = tk.BooleanVar(value=False)
+        ttk.Checkbutton(row, text="Keep identifying", variable=self.v_keep).pack(side="left", padx=10)
+        self.b_more = ttk.Button(row, text="Read more", command=self.read_more)
+        self.b_more.pack(side="left")
+        self.b_go = ttk.Button(row, text="", command=self.go_action)
+        self.status = tk.Label(f, text="Tune the radio to the signal, then press Identify.", bg=G.C["bg"],
+                               fg=G.C["ink"], font=(G.UI, 11, "bold"), anchor="w")
+        self.status.pack(fill="x", pady=(6, 4))
+        self.txt = tk.Text(f, bg=G.C["panel"], fg=G.C["ink"], font=(G.MONO, 10), wrap="word", height=24,
+                           highlightthickness=0, padx=8, pady=6)
+        self.txt.tag_config("name", foreground=G.C["green"], font=(G.MONO, 11, "bold"))
+        self.txt.tag_config("noise", foreground=G.C["amber"], font=(G.MONO, 11, "bold"))
+        self.txt.tag_config("ctx", foreground=G.C["muted"])
+        self.txt.pack(fill="both", expand=True)
+        self.protocol("WM_DELETE_WINDOW", self.close)
+        self.after(300, self.tick)
+
+    def identify(self):
+        if self.busy:
+            return
+        try:
+            dial = float(self.v_dial.get().replace(",", "."))
+        except ValueError:
+            dial = 0.0
+        self.busy = True
+        self.status.config(text=f"Listening for {self.SECONDS} seconds...", fg=G.C["purple"])
+        dev = G.load_cfg().get("receive", {}).get("audio_device", "default")
+        import numpy as np
+
+        def work():
+            from . import monitor, sigint
+            try:
+                t0 = time.time()
+                x = monitor.record(self.SECONDS, dev)
+                self.q.put(("ok", dial, sigint.identify(x, dial_hz=dial * 1e6, t0=t0),
+                            float(20 * np.log10(np.sqrt(np.mean(x ** 2)) + 1e-9))))
+            except Exception as e:                  # noqa: BLE001
+                self.q.put(("err", str(e), None, None))
+        threading.Thread(target=work, daemon=True).start()
+
+    def show(self, dial, found, level_db):
+        from . import sigint
+        self.txt.delete("1.0", "end")
+        if dial:
+            self.txt.insert("end", f"Dial {dial:.4f} MHz: " + "; ".join(sigint.context(dial)) + "\n", "ctx")
+        self.txt.insert("end", f"Audio level {level_db:.0f} dBFS" + (" - very low: raise the radio's USB audio "
+                                                                      "or the Windows input level" if level_db < -50
+                                                                      else "") + "\n\n", "ctx")
+        for f in found:
+            at = f" at {f.freq_hz:.0f} Hz" if f.freq_hz else ""
+            self.txt.insert("end", f"{f.name}{at}  {f.confidence:.0%}\n", "noise" if f.kind != "signal" else "name")
+            for label, val in (("What", f.what), ("Sounds like", f.sounds), ("Why", "; ".join(f.reasons[:3])),
+                               ("Next", f.action)):
+                if val:
+                    self.txt.insert("end", f"  {label}: {val}\n")
+            self.txt.insert("end", "\n")
+        self.top = found[0] if found else None
+        sig = [f for f in found if f.kind == "signal" and f.name != "Noise only"]
+        head = sig[0] if sig else (found[0] if found else None)
+        self.status.config(text=(f"Most likely: {head.name} ({head.confidence:.0%})" if head else
+                                 "Nothing recognised"), fg=G.C["green"] if sig else G.C["amber"])
+        act = {"WEFAX": "Open Weather fax"}.get(head.name if head else "")
+        if head and head.name in ("FT8", "FT4", "WSPR", "Q65", "JT65"):
+            act = f"Decode {head.name}"
+        if act:
+            self.b_go.config(text=act)
+            self.b_go.pack(side="left", padx=6, in_=self.b_more.master)
+            self.act = (act, head.name)
+        else:
+            self.b_go.pack_forget()
+        if head:
+            self.app.add_ticker(f"SIGNAL ID: {head.name} ({head.confidence:.0%})", log=False)
+
+    def read_more(self):
+        if self.top and self.top.link:
+            webbrowser.open(self.top.link)
+        else:
+            webbrowser.open("https://www.sigidwiki.com/wiki/Database")
+
+    def go_action(self):
+        act, name = getattr(self, "act", ("", ""))
+        if name == "WEFAX":
+            WefaxWindow(self.app)
+        elif act.startswith("Decode"):
+            self.app.v_sub.set(name)
+            self.app.v_dial.set(self.v_dial.get())
+            self.app.save_listen(mode_changed=False)
+            self.app.print(f"Decode set to {name} on {self.v_dial.get()} MHz: press Listen + decode.\n")
+
+    def close(self):
+        self.v_keep.set(False)
+        self.destroy()
+
+    def tick(self):
+        if not self.winfo_exists():
+            return
+        try:
+            while True:
+                kind, a, found, lvl = self.q.get_nowait()
+                self.busy = False
+                if kind == "err":
+                    self.status.config(text=f"No receive audio: {a}", fg=G.C["red"])
+                else:
+                    self.show(a, found, lvl)
+                    if self.v_keep.get():
+                        self.after(500, self.identify)
+        except queue.Empty:
+            pass
+        self.after(300, self.tick)

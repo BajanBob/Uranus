@@ -244,6 +244,14 @@ sc.q.put({"type": "scan", "state": "dwell", "chan": "14.074 MHz FT8 (20 m)", "un
 sc.tick()
 snap(sc, "9-scanner.png")
 sc.destroy()
+sid = T.SignalIdWindow(a)
+from uranus import sigint as _si   # noqa: E402
+_t = np.arange(15 * 12000) / 12000
+_x = np.random.default_rng(1).normal(0, 1, len(_t)) + 1.5 * np.sin(2 * np.pi * 100 * _t)
+sid.show(14.074, _si.identify(_x, dial_hz=14.074e6), -30.0)
+assert "Mains hum" in sid.status.cget("text") or "Mains hum" in sid.txt.get("1.0", "end")
+snap(sid, "10-signal-id.png")
+sid.destroy()
 sh = T.ShareWindow(a, "")
 assert "github.com/BajanBob/Uranus/releases" in T.SHARE_TEXT
 sh.destroy()
