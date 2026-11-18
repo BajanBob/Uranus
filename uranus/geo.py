@@ -40,3 +40,28 @@ def bearing_deg(a, b):
     y = math.sin(lo2 - lo1) * math.cos(la2)
     x = math.cos(la1) * math.sin(la2) - math.sin(la1) * math.cos(la2) * math.cos(lo2 - lo1)
     return (math.degrees(math.atan2(y, x)) + 360) % 360
+
+
+def grid_tree(grids, level=2, deepest=6):
+    """Recursively group Maidenhead locators by field (2), square (4) and subsquare (6).
+
+    Returns [{"grid": "FK", "count": n, "children": [{"grid": "FK93", ...}]}], largest first at each level.
+    Locators shorter than a level stop at the level above (the base case), so mixed 4- and 6-character
+    locators work. ``deepest`` caps the recursion.
+    """
+    items = [g.strip()[:deepest] for g in grids if g and len(g.strip()) >= 2]
+    return _tree([g[:2].upper() + g[2:4] + g[4:6].lower() for g in items], level, deepest)
+
+
+def _tree(grids, level, deepest):
+    groups = {}
+    for g in grids:
+        if len(g) >= level:
+            groups.setdefault(g[:level], []).append(g)
+    out = []
+    for prefix, members in groups.items():
+        finer = [g for g in members if len(g) > level]
+        out.append({"grid": prefix, "count": len(members),
+                    "children": _tree(finer, level + 2, deepest) if finer and level < deepest else []})
+    out.sort(key=lambda n: (-n["count"], n["grid"]))
+    return out

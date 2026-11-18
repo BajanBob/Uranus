@@ -145,6 +145,18 @@ python3 -m uranus link-budget --watts 10 --mhz 144.49 --km 200 --extra-loss 25
 The decoder takes any WAV recorded from a USB receiver with the dial on the
 beacon frequency.
 
+## Spot database and band openings
+
+`python -m uranus spotdb` copies new lines from `out/spots.jsonl` into `out/spots.db` (SQLite). Running it again only adds what is new.
+
+    python -m uranus spotdb --openings 20m              # when 20 m was open in the last 24 h
+    python -m uranus spotdb --openings 2m --hours 72
+    python -m uranus spotdb --timeline 20m --slot 600   # spots per 10 minutes, quiet slots included
+
+Both use recursive SQL (`WITH RECURSIVE`). The timeline builds a series of 2-minute WSPR slots and joins the spots to it, so quiet slots show as zero. Openings walk those slots in order and start a new opening when a band comes back after more than `--max-gap` quiet slots (2 by default, 4 minutes). Each query is capped at 20,000 slots.
+
+Octopus reports use the same queries for a **Band openings** table, and a recursive Maidenhead tree (field, square, subsquare) for a **Grid fields heard** table.
+
 ## Sensitivity summary (measured, 50 % decode, SNR in 2500 Hz)
 
 | Slot | UR (noncoherent) | **Pumpkin (coherent, GPSDO)** | WSJT-X FST4 |

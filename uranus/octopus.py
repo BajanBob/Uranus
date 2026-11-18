@@ -17,7 +17,7 @@ import json
 import os
 import time
 
-from . import geo, propagation
+from . import geo, propagation, spotdb
 from .sanity import suspect
 
 VHF = ("6m", "2m", "1.25m", "70cm")
@@ -98,7 +98,7 @@ def _region(ll, km):
     return "Africa and Indian Ocean"
 
 
-def report(rows, home_grid, day, context="", source=""):
+def report(rows, home_grid, day, context="", source="", spots=None, window=None):
     good = [r for r in rows if not r["suspect"]]
     bad = [r for r in rows if r["suspect"]]
     vhf = [r for r in good if r["band"] in VHF]
@@ -133,6 +133,8 @@ def report(rows, home_grid, day, context="", source=""):
             L.append(f"| {reg} | {len(rs)} | {min(r['km'] for r in rs):,}-{max(r['km'] for r in rs):,} | "
                      f"{max(r['best'] for r in rs):+.0f} | {ex} |")
         L += ["", "Mode: F2-layer skywave throughout (tropospheric ducting and TEP do not apply on HF).", ""]
+    L += openings_section(spots, window)
+    L += fields_section(good)
     L += ["## Anomalies", ""]
     if bad:
         L += ["Suspect decodes (kept out of the analysis):", ""]
@@ -156,6 +158,40 @@ def report(rows, home_grid, day, context="", source=""):
     return "\n".join(L)
 
 
+def openings_section(spots, window=None, width=120, max_gap=2):
+    """Band openings found by the recursive slot walk in spotdb (needs spot times)."""
+    timed = [s for s in spots or [] if s.get("time")]
+    if not timed:
+        return []
+    t0, t1 = window or (min(s["time"] for s in timed), max(s["time"] for s in timed) + 1)
+    t0 -= t0 % width
+    db = spotdb.from_spots(timed)
+    L = ["## Band openings (UTC)", "",
+         f"A band counts as open while it keeps producing spots; a gap of more than {max_gap * width // 60} "
+         "minutes ends an opening.", "",
+         "| Band | Open | Stations | Spots | Best SNR |", "|---|---|---|---|---|"]
+    found = False
+    for band in spotdb.bands(db, t0, t1):
+        for o in spotdb.openings(db, band, t0, t1, width, max_gap):
+            found = True
+            L.append(f"| {band} | {spotdb.hhmm(o['start'])}-{spotdb.hhmm(o['stop'])} | {o['stations']} | "
+                     f"{o['spots']} | {o['best_snr']:+.0f} |")
+    db.close()
+    return L + [""] if found else []
+
+
+def fields_section(rows, top=8):
+    """Maidenhead fields heard, each with its busiest squares (recursive grid tree)."""
+    tree = geo.grid_tree([r["grid"] for r in rows])
+    if not tree:
+        return []
+    L = ["## Grid fields heard", "", "| Field | Stations | Busiest squares |", "|---|---|---|"]
+    for f in tree[:top]:
+        sq = ", ".join(f"{c['grid']} ({c['count']})" for c in f["children"][:4])
+        L.append(f"| {f['grid']} | {f['count']} | {sq} |")
+    return L + [""]
+
+
 def write(rows, outdir):
     os.makedirs(outdir, exist_ok=True)
     with open(os.path.join(outdir, "spots.csv"), "w", newline="", encoding="utf-8") as f:
@@ -170,18 +206,20 @@ def run(home_grid, spot_path="out/spots.jsonl", day=None, csv_path=None, root=os
     if csv_path:
         spots, src = load_csv(csv_path), f"table {os.path.basename(csv_path)}"
         day = day or dt.date.today().isoformat()
+        window = None
     else:
         d = dt.date.fromisoformat(day) if day else dt.datetime.now(dt.timezone.utc).date()
         t1 = dt.datetime(d.year, d.month, d.day, tzinfo=dt.timezone.utc).timestamp() + 86400
         t0 = t1 - (86400 if day else 2 * 86400)
         spots, src = load_jsonl(spot_path, t0, t1), f"Uranus spot log {spot_path}"
+        window = (t0, t1)
         day = d.isoformat()
     rows = analyse(spots, home_grid)
     outdir = os.path.join(root, day)
     ctx_path = os.path.join(outdir, "context.md")
     ctx = open(ctx_path, encoding="utf-8").read() if os.path.exists(ctx_path) else ""
     write(rows, outdir)
-    text = report(rows, home_grid, day, ctx, src)
+    text = report(rows, home_grid, day, ctx, src, spots=spots, window=window)
     with open(os.path.join(outdir, "report.md"), "w", encoding="utf-8") as f:
         f.write(text)
     return os.path.join(outdir, "report.md"), rows

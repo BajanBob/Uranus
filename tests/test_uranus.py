@@ -887,5 +887,78 @@ class TestScheduler(unittest.TestCase):
         self.assertGreaterEqual(ev[3][0] - ev[2][1], 180)
 
 
+class TestRecursion(unittest.TestCase):
+    """Recursive SQL in spotdb (slot series, openings) and the recursive Maidenhead tree."""
+
+    T0 = 1_763_000_040.0  # a WSPR slot boundary (multiple of 120 s)
+
+    def spot(self, call, k, band_hz=14_095_600, snr=-10, grid="IO91"):
+        return {"time": self.T0 + k * 120 + 5, "call": call, "grid": grid, "snr": snr, "freq_hz": band_hz,
+                "mode": "WSPR", "direction": "rx"}
+
+    def test_timeline_reports_quiet_slots(self):
+        from uranus import spotdb
+        db = spotdb.from_spots([self.spot("G4ABC", 0), self.spot("F5XYZ", 0), self.spot("G4ABC", 3)])
+        rows = spotdb.timeline(db, self.T0, self.T0 + 5 * 120)
+        self.assertEqual([r["spots"] for r in rows], [2, 0, 0, 1, 0])
+        self.assertEqual(rows[0]["stations"], 2)
+
+    def test_openings_split_on_long_gaps(self):
+        from uranus import spotdb
+        ks = [0, 1, 3, 4, 10, 11]  # gap of one slot stays open; gap of five ends it
+        spots = [self.spot("G4ABC" if k % 2 else "EA8ZZ", k, snr=-k) for k in ks]
+        spots.append(self.spot("W1AW", 2, band_hz=144_489_000))  # 2 m spot must not merge into 20 m
+        db = spotdb.from_spots(spots)
+        rows = spotdb.openings(db, "20m", self.T0, self.T0 + 12 * 120, max_gap=2)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual((rows[0]["start"], rows[0]["stop"]), (self.T0, self.T0 + 5 * 120))
+        self.assertEqual(rows[0]["spots"], 4)
+        self.assertEqual(rows[0]["stations"], 2)
+        self.assertEqual(rows[1]["spots"], 2)
+        self.assertEqual(len(spotdb.openings(db, "2m", self.T0, self.T0 + 12 * 120)), 1)
+
+    def test_slot_limit_is_enforced(self):
+        from uranus import spotdb
+        db = spotdb.from_spots([])
+        with self.assertRaises(ValueError):
+            spotdb.timeline(db, 0, 10 ** 9, 1)
+
+    def test_import_is_incremental(self):
+        import json
+        import tempfile
+        from uranus import spotdb
+        with tempfile.TemporaryDirectory() as d:
+            log = os.path.join(d, "spots.jsonl")
+            with open(log, "w") as f:
+                f.write(json.dumps(self.spot("G4ABC", 0)) + "\n" + "not json\n")
+            db = spotdb.connect(os.path.join(d, "spots.db"))
+            self.assertEqual(spotdb.import_jsonl(db, log), 1)
+            self.assertEqual(spotdb.import_jsonl(db, log), 0)
+            with open(log, "a") as f:
+                f.write(json.dumps(self.spot("F5XYZ", 1)) + "\n" + '{"time": 1, "call"')  # partial line
+            self.assertEqual(spotdb.import_jsonl(db, log), 1)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM spots").fetchone()[0], 2)
+            db.close()
+
+    def test_grid_tree_nests_fields_squares_subsquares(self):
+        tree = geo.grid_tree(["FK93mc", "fk93md", "FK93", "FK94", "IO91wm", "x"])
+        self.assertEqual([n["grid"] for n in tree], ["FK", "IO"])
+        fk = tree[0]
+        self.assertEqual(fk["count"], 4)
+        self.assertEqual(fk["children"][0], {"grid": "FK93", "count": 3, "children": [
+            {"grid": "FK93mc", "count": 1, "children": []}, {"grid": "FK93md", "count": 1, "children": []}]})
+
+    def test_octopus_report_includes_openings_and_fields(self):
+        from uranus import octopus
+        spots = [self.spot("G4ABC", k, grid="IO91") for k in (0, 1, 2)]
+        spots += [self.spot("PY2XX", 1, grid="GG66", snr=-3)]
+        rows = octopus.analyse(spots, "GK03ef")
+        text = octopus.report(rows, "GK03ef", "2025-11-13", spots=spots)
+        self.assertIn("## Band openings (UTC)", text)
+        self.assertIn("| 20m |", text)
+        self.assertIn("## Grid fields heard", text)
+        self.assertIn("| IO | 1 | IO91 (1) |", text)
+
+
 if __name__ == "__main__":
     unittest.main()

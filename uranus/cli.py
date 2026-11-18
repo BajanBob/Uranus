@@ -128,6 +128,14 @@ def main(argv=None):
     a.add_argument("--demo", action="store_true", help="sample stations, clearly labelled")
     a.add_argument("--open", action="store_true", help="open the map in a browser")
     a.add_argument("--out", default=os.path.join("out", "map.html"))
+    a = sub.add_parser("spotdb", help="index out/spots.jsonl in SQLite; band openings and timelines")
+    a.add_argument("--db", default=os.path.join("out", "spots.db"))
+    a.add_argument("--jsonl", default=os.path.join("out", "spots.jsonl"))
+    a.add_argument("--hours", type=float, default=24, help="window to report on")
+    a.add_argument("--openings", metavar="BAND", help="list openings on a band, e.g. 20m or 2m")
+    a.add_argument("--timeline", metavar="BAND", help="spots per slot on a band ('' for all)")
+    a.add_argument("--slot", type=float, default=120, help="slot length in seconds (120 = WSPR cycle)")
+    a.add_argument("--max-gap", type=int, default=2, help="quiet slots allowed inside one opening")
     a = sub.add_parser("octopus", help="Octopus daily propagation analysis (2 m / 70 cm focus)")
     a.add_argument("--day", help="UTC day YYYY-MM-DD (default: the last 24-48 h)")
     a.add_argument("--csv", help="analyse a CSV table instead of out/spots.jsonl")
@@ -310,6 +318,9 @@ def main(argv=None):
         finally:
             if reporter:
                 reporter.flush()
+    elif args.cmd == "spotdb":
+        from . import spotdb
+        spotdb.main(args)
     elif args.cmd == "octopus":
         from . import octopus
         st = cfg["station"]

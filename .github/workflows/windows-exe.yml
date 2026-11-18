@@ -140,7 +140,7 @@ jobs:
             Windows: Uranus-Windows-exe.zip - unzip and double-click Uranus.exe (no Python needed).
             Raspberry Pi: Uranus-RaspberryPi.zip - unzip and run  bash linux/install-pi.sh
             Linux: Uranus-Linux.zip - unzip and run  bash linux/install-linux.sh
-            New in this version: FT4 - transmit (WSJT-X ft4code), decode (jt9) and AUTO decoding, with the WSJT-X FT4 frequencies on 80-6 m and 2 m (144.170); older settings gain FT4 slots switched off. Plus AUTO signal identification.
+            New in this version: spot database with recursive SQL - `python -m uranus spotdb` indexes out/spots.jsonl in SQLite and finds band openings and 2-minute timelines; Octopus reports now include band openings and the Maidenhead fields heard.
             Free software under GPL-3.0. Testers wanted worldwide: report results under Issues.
           files: |
             Uranus-Windows-exe.zip
