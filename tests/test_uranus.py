@@ -1017,5 +1017,29 @@ class TestQ65(unittest.TestCase):
         wsjt.set_station("", "")
 
 
+class TestQ65Transmit(unittest.TestCase):
+    def test_q65_slot_timing_and_plan(self):
+        from uranus import freqplan
+        q = scheduler.Slot("2m", "q65", 144.170)
+        self.assertEqual(scheduler.align(1000.0, q) % 60, 1.0)      # 1 s into the minute, like WSJT-X
+        self.assertEqual(scheduler.slot_duration(q), 51.0)
+        self.assertEqual(freqplan.check("2m", "q65", 144.170), "")
+        self.assertTrue(freqplan.options("2m", "q65"))
+
+    def test_wspr_off_the_standard_dial_is_flagged(self):
+        from uranus import freqplan
+        self.assertEqual(freqplan.wspr_dial("2m"), 144.489)
+        self.assertIn("outside the 200 Hz WSPR window", freqplan.check("2m", "wspr", 144.490))
+        self.assertEqual(freqplan.check("2m", "wspr", 144.489), "")
+        self.assertEqual(freqplan.check("20m", "wspr", 14.0956), "")
+
+    def test_default_settings_have_q65_off_and_wspr_on_the_standard_dial(self):
+        cfg = tomllib.loads(open("config/uranus.toml", encoding="utf-8").read())
+        b2 = next(b for b in cfg["band"] if b["name"] == "2m")
+        q = [s for s in b2["slot"] if s["mode"] == "q65"]
+        self.assertEqual(len(q), 1); self.assertFalse(q[0].get("enabled", True))
+        self.assertEqual([s["freq_mhz"] for s in b2["slot"] if s["mode"] == "wspr"], [144.489])
+
+
 if __name__ == "__main__":
     unittest.main()

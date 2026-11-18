@@ -89,6 +89,7 @@ def _band_blocks(text):
 
 
 UPGRADED_BANDS = []
+CORRECTED = []          # settings Uranus corrected at start-up, shown in the console
 
 
 def upgrade_config():
@@ -117,6 +118,22 @@ def upgrade_config():
                     part = re.sub(r"(?m)^\s*enabled\s*=.*$", "", part).rstrip() + "\n  enabled = false\n"
                     extra += "\n  [[band.slot]]" + part
                     UPGRADED_BANDS.append(f"{m.group(1).upper()} on {b['name']}")
+            # WSPR set a little off the standard dial (e.g. 144.490 for 144.489) puts the tones outside the
+            # 200 Hz WSPR window where nobody listens: move it back to the standard dial
+            from . import freqplan as _fp
+            std = _fp.wspr_dial(b["name"])
+            blk = mine_blocks[b["name"]]
+            if std:
+                def _fix(m, std=std, band=b["name"]):
+                    f = float(m.group(2))
+                    if 0.00005 < abs(f - std) < 0.003:
+                        CORRECTED.append(f"WSPR on {band} moved from {f:.4f} to the standard {std:.4f} MHz dial")
+                        return m.group(1) + f"{std:.3f}" + m.group(3)
+                    return m.group(0)
+                fixed = re.sub(r'(mode\s*=\s*"wspr"\s*\n\s*freq_mhz\s*=\s*)([\d.]+)(.*)', _fix, blk)
+                if fixed != blk:
+                    text = text.replace(blk, fixed, 1)
+                    mine_blocks[b["name"]] = fixed
             if extra:
                 text = text.replace(mine_blocks[b["name"]], mine_blocks[b["name"]].rstrip("\n") + "\n" + extra, 1)
         if new:
@@ -373,6 +390,7 @@ class App(tk.Tk):
                    + (f"Your settings were brought over from {MIGRATED_FROM}\n" if MIGRATED_FROM else "")
                    + (f"Added to your settings (switched off): {', '.join(UPGRADED_BANDS)}\n"
                       if UPGRADED_BANDS else "")
+                   + "".join(f"Corrected: {c}\n" for c in CORRECTED)
                    + "Hover over any control for help.\n\n")
         self.refresh_station()
         self.set_state("idle", "Ready. New here? Press 'Setup wizard'.")
@@ -1846,7 +1864,7 @@ class SetupWindow(AutoSave, tk.Toplevel):
         from .freqplan import BAND_NAMES
         active = {b["name"]: b.get("active", True) for b in self.cfg.get("band", [])}
         self.band_names = [b["name"] for b in self.cfg.get("band", [])]
-        band_tips = {"2m": "144-148 MHz. APRS 144.390, FT8 144.174, WSPR 144.490, Pumpkin.",
+        band_tips = {"2m": "144-148 MHz. APRS 144.390, FT8 144.174, Q65 144.170, WSPR 144.489, Pumpkin.",
                      "1.25m": "222-225 MHz (220 MHz band). ITU Region 2 only; check your licence. "
                               "Needs a transverter, a tri-band FM rig or an SDR. Not on the IC-9100.",
                      "70cm": "420-450 MHz. FT8 432.174, WSPR 432.300, Pumpkin.",
@@ -2103,6 +2121,8 @@ MODE_HELP = {
     "ft8": "FT8, USB. 15-second slots, decoded by WSJT-X stations worldwide. Needs WSJT-X installed.",
     "wspr": "WSPR, USB. 2-minute beacon, reported on wsprnet.org. Needs WSJT-X installed.",
     "ft4": "FT4, USB. 7.5-second slots, the fast contest mode of WSJT-X. Needs WSJT-X installed.",
+    "q65": "Q65-60A, USB. 60-second slots, WSJT-X's deepest VHF mode (about 6-7 dB below FT8) for tropo, "
+           "rain scatter and EME. Sends CQ, call and grid. Needs WSJT-X 2.4 or later installed.",
     "pumpkin": "Pumpkin, USB. Uranus coherent weak-signal mode, down to about -31 dB. Needs a GPS-locked "
                "radio at both ends for full sensitivity.",
     "cucumber": "Cucumber, FM. Pumpkin through an FM radio; decodes far below where voice stops. Agree a "
@@ -2537,7 +2557,7 @@ class SetupWizard(tk.Toplevel):
     def p_bands(self):
         p = self.radios.BY_NAME[self.v["profile"].get()]
         self._title("Bands", "The beacon visits each band in turn, with a 3-minute pause between bands.")
-        tips = {"2m": "144-148 MHz: APRS 144.390, FT8 144.174, WSPR 144.490, Pumpkin.",
+        tips = {"2m": "144-148 MHz: APRS 144.390, FT8 144.174, Q65 144.170, WSPR 144.489, Pumpkin.",
                 "1.25m": "222-225 MHz: ITU Region 2 only. Needs a radio that covers 220 MHz (not the IC-9100).",
                 "70cm": "420-450 MHz: FT8 432.174, WSPR 432.300, Pumpkin."}
         for b, label in (("2m", "2 m"), ("1.25m", "1.25 m (220 MHz)"), ("70cm", "70 cm")):

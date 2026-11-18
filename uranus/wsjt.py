@@ -84,6 +84,21 @@ def ft4_tones(message):
     return tones
 
 
+Q65_SYNC = 22                            # Q65 channel: 85 symbols, 22 of them the sync tone (0)
+
+
+def q65_tones(message):
+    """85 Q65 channel symbols as q65code prints them: tone 0 = sync, data tones 1-64."""
+    text = _run("q65code", message)
+    m = re.search(r"channel symbols[^\n]*\n", text, re.I)
+    if not m:
+        raise ValueError("no 'Channel symbols' section in q65code output")
+    tones = [int(v) for v in re.findall(r"\d+", text[m.end():])][:85]   # two-digit tones: read whole numbers
+    if len(tones) != 85 or max(tones) > 64 or tones.count(0) != Q65_SYNC:
+        raise ValueError("q65code output failed the sync check")
+    return tones
+
+
 def wspr_tones(call, grid, dbm):
     return parse_tones(_run("wsprcode", f"{call} {grid} {dbm}"), 162, 3)
 
@@ -116,6 +131,12 @@ def ft4_audio(message, f0=1500.0):
     y[:576] *= ramp
     y[-576:] *= ramp[::-1]
     return y.astype(np.float32)
+
+
+def q65_audio(message, f0=1500.0):
+    """Q65-60A: 85 symbols x 0.6 s (51 s), 1.667 Hz tone spacing, plain continuous-phase FSK.
+    f0 is the sync tone, which is the frequency WSJT-X reports for a Q65 signal."""
+    return gfsk(q65_tones(message), 7200, FS / 7200, f0).astype(np.float32)
 
 
 def wspr_audio(call, grid, dbm, f0=1500.0):

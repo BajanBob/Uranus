@@ -117,6 +117,7 @@ PLAN = [
     Freq("2m", "aprs", 145.825, "All", "standard", "APRS via the ISS and satellites (path ARISS), worldwide"),
     Freq("2m", "ft8", 144.174, "All", "standard", "FT8 calling (WSJT-X default)"),
     Freq("2m", "wspr", 144.489, "All", "standard", "WSPR, tones 144.4904-144.4906"),
+    Freq("2m", "q65", 144.170, "All", "common", "Q65-60A weak-signal (tropo, rain scatter), shares the FT4 window"),
     Freq("2m", "pumpkin", 144.490, "All", "proposed", "tones at 144.4915, 800 Hz above the WSPR window"),
     Freq("2m", "pumpkin", 144.285, "R2", "proposed", "Region 2 beacon segment 144.275-144.300"),
     Freq("2m", "pumpkin", 144.171, "All", "proposed", "weak-signal digital, just below FT8"),
@@ -149,7 +150,7 @@ PLAN = [
 
 # Occupied bandwidth used for the edge check (kHz): SSB modes stay within 3 kHz of the dial,
 # FM modes occupy a 12.5 kHz channel centred on the frequency.
-_BW_KHZ = {"ft4": 3.0, "aprs": 12.5, "cucumber": 12.5, "ft8": 3.0, "wspr": 3.0, "pumpkin": 3.0, "ur": 3.0}
+_BW_KHZ = {"ft4": 3.0, "q65": 3.0, "aprs": 12.5, "cucumber": 12.5, "ft8": 3.0, "wspr": 3.0, "pumpkin": 3.0, "ur": 3.0}
 FM_MODES = ("aprs", "cucumber")
 
 
@@ -178,12 +179,22 @@ def check(band, mode, mhz, region="R2"):
     f = find(band, mode, mhz)
     if f and f.region not in ("All", region):
         return f"{mhz:.3f} MHz is a Region {f.region[1]} frequency; check your licence and local band plan."
+    if mode == "wspr":
+        std = wspr_dial(band)
+        if std and abs(mhz - std) > 0.00005:
+            return (f"WSPR stations listen on {std:.4f} MHz dial. At {mhz:.4f} your tones fall "
+                    f"{(mhz - std) * 1e6:+.0f} Hz outside the 200 Hz WSPR window, so nobody will decode them.")
     if band == "60m":
         return "60 m rules differ from country to country (channels, power, modes): check your licence."
     if not any(a <= mhz <= b for a, b, _ in SEGMENTS.get(band, [])):
         return (f"{mhz:.3f} MHz is not in a band-plan segment Uranus knows for {band}. It may still be legal: "
                 "check your national band plan.")
     return ""
+
+
+def wspr_dial(band):
+    """The standard WSPR dial frequency for a band, or None."""
+    return next((f.mhz for f in PLAN if f.band == band and f.mode == "wspr" and f.status == "standard"), None)
 
 
 def segment(band, mhz):

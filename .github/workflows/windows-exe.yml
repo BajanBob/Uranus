@@ -140,7 +140,7 @@ jobs:
             Windows: Uranus-Windows-exe.zip - unzip and double-click Uranus.exe (no Python needed).
             Raspberry Pi: Uranus-RaspberryPi.zip - unzip and run  bash linux/install-pi.sh
             Linux: Uranus-Linux.zip - unzip and run  bash linux/install-linux.sh
-            New in this version: Q65 decoding - WSJT-X's deepest VHF mode (Q65-60A, 60-second slots) hears signals about 6-7 dB weaker than FT8; choose Q65 under Decode. The slot bar is purple while listening, amber while decoding and red while transmitting, and FT8, FT4 and Q65 use your callsign for a priori decoding.
+            New in this version: Q65 transmit - tick Q65 in Bands and modes (2 m, 144.170, off by default) to beacon CQ in WSJT-X's deepest VHF mode; AUTO now recognises strong Q65 signals and follows them. Fixed: a WSPR frequency set slightly off the standard dial (for example 144.490 instead of 144.489) put the tones outside the WSPR window - Uranus now corrects it at start-up and warns in Bands and modes.
             Free software under GPL-3.0. Testers wanted worldwide: report results under Issues.
           files: |
             Uranus-Windows-exe.zip

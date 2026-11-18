@@ -188,7 +188,7 @@ class Listener:
                                     "kind": "station" if grid else "message", "mode_name": "APRS"})
         # longer modes need a whole slot of their own: follow one that keeps appearing
         for d in dets:
-            if d.family in ("wspr", "pumpkin", "ur") and d.confidence >= 0.5 and d.seen >= 2:
+            if d.family in ("wspr", "q65", "pumpkin", "ur") and d.confidence >= 0.5 and d.seen >= 2:
                 self.follow = d
                 break
         return "AUTO", res
@@ -196,7 +196,7 @@ class Listener:
     def _follow(self, d):
         import copy
         cfg = copy.deepcopy(self.cfg)
-        sub = "WSPR" if d.family == "wspr" else d.mode
+        sub = {"wspr": "WSPR", "q65": "Q65"}.get(d.family, d.mode)
         cfg["receive"] = {**cfg.get("receive", {}), "mode": d.family, "submode": sub}
         log.info("AUTO: following %s at %.0f Hz for one slot", sub, d.freq_hz)
         self.on_event({"type": "following", "mode": sub, "freq_hz": d.freq_hz})

@@ -123,6 +123,11 @@ active = true                # switch the whole band on/off (Station setup does 
   mode = "wspr"
   freq_mhz = 144.489         # international 2 m WSPR dial (tones 144.4904-144.4906)
 
+  [[band.slot]]
+  mode = "q65"
+  freq_mhz = 144.170  # Q65-60A weak-signal, 60 s slots (needs WSJT-X 2.4 or later)
+  enabled = false
+
   [[band.slot]]              # experimental Uranus mode - see docs/UR-MODE.md
   mode = "ur"
   submode = "UR-60"

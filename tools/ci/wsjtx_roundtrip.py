@@ -73,4 +73,13 @@ if shutil.which("q65sim"):
     res = wsjt.q65_decode(q, 144_170_000)
     print("Q65 -26 dB:", res)
     assert any(r["call"] == "K1ABC" and r["grid"] == "FN42" for r in res), res
+
+# Q65 transmit: Uranus's own Q65 audio (q65code tones) at -24 dB must decode in jt9
+qa = wsjt.q65_audio("CQ 8P5AB GK03", f0=1200.0)
+slot = np.zeros(60 * fs)
+slot[fs:fs + len(qa)] += qa                                   # 1 s into the minute, as the beacon sends it
+sig = slot / np.sqrt(np.mean(qa ** 2)) * np.sqrt(2500 / (fs / 2)) * 10 ** (-24 / 20)
+res = wsjt.q65_decode(rng.normal(0, 1, len(slot)) + sig, 144_170_000)
+print("Q65 TX -24 dB:", res)
+assert any(r["call"] == "8P5AB" and r["grid"] == "GK03" and abs(r["freq_hz"] - 144_171_200) < 5 for r in res), res
 print("WSJT-X round trip OK")
