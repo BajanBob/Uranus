@@ -960,5 +960,35 @@ class TestRecursion(unittest.TestCase):
         self.assertIn("| IO | 1 | IO91 (1) |", text)
 
 
+class TestDeepDecode(unittest.TestCase):
+    def test_station_args_for_a_priori_decoding(self):
+        from uranus import wsjt
+        try:
+            wsjt.set_station("8p5ab-10", "GK03ef")
+            self.assertEqual(wsjt._station_args(), ["-c", "8P5AB", "-G", "GK03"])
+            wsjt.set_station("N0CALL", "FN42")          # the placeholder call never goes to jt9
+            self.assertEqual(wsjt._station_args(), [])
+        finally:
+            wsjt.set_station("", "")
+
+    def test_jt9_gets_our_call(self):
+        from unittest import mock
+        from uranus import wsjt
+        seen = {}
+        def fake_run(cmd, **kw):
+            seen["cmd"] = cmd
+            return mock.Mock(stdout="")
+        try:
+            wsjt.set_station("8P5AB", "GK03")
+            with mock.patch.object(wsjt, "decoder_path", return_value="jt9"), mock.patch.object(wsjt.subprocess, "run", fake_run):
+                wsjt.ft8_decode(np.zeros(15 * wsjt.FS), 144_174_000)
+            cmd = seen["cmd"]
+            self.assertIn("-d", cmd); self.assertEqual(cmd[cmd.index("-d") + 1], "3")
+            self.assertEqual(cmd[cmd.index("-c") + 1], "8P5AB")
+            self.assertEqual(cmd[cmd.index("-G") + 1], "GK03")
+        finally:
+            wsjt.set_station("", "")
+
+
 if __name__ == "__main__":
     unittest.main()

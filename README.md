@@ -145,6 +145,15 @@ python3 -m uranus link-budget --watts 10 --mhz 144.49 --km 200 --extra-loss 25
 The decoder takes any WAV recorded from a USB receiver with the dial on the
 beacon frequency.
 
+## The slot bar
+
+Under the decoder heading, a bar shows what Uranus is doing in each slot:
+- **Purple:** listening, recording the slot (the LISTENING lamp is purple too).
+- **Gold:** decoding. jt9 takes only a second or two, so a gold block sweeps across while it works.
+- **Red:** transmitting, filling up as the transmission runs, with the seconds left. Only ON AIR transmits; Listen + decode never does.
+
+**Deep decode:** FT8 and FT4 always use WSJT-X's deepest setting (`-d 3`). Uranus also gives jt9 your callsign and grid, which turns on a priori decoding: replies addressed to you can be decoded about 1 to 2 dB weaker. If a slot shows "audio low", raise the radio's USB audio output to about -40 to -30 dBFS.
+
 ## Spot database and band openings
 
 `python -m uranus spotdb` copies new lines from `out/spots.jsonl` into `out/spots.db` (SQLite). Running it again only adds what is new.

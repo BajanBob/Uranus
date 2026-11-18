@@ -187,6 +187,28 @@ def ft4_decode(x, dial_hz, fs=FS, workdir=None):
     return _jt9_decode(x, dial_hz, "-5", "7", 7.5, fs, workdir)
 
 
+# Deep decode: jt9 already runs at its deepest setting (-d 3). Giving it our own callsign and grid also turns on
+# WSJT-X's a priori decoding, which recovers weaker replies addressed to us. Set by the listener from the settings.
+_STATION = {"call": "", "grid": ""}
+
+
+def set_station(call, grid):
+    """Tell jt9 our callsign and 4-character grid for a priori (callsign-aware) decoding."""
+    call = (call or "").strip().upper().split("-")[0]          # APRS SSID (8P5AB-10) -> 8P5AB
+    grid = (grid or "").strip()[:4].upper()
+    ok_call = bool(_CALL.match(call)) and call != "N0CALL"
+    _STATION.update(call=call if ok_call else "", grid=grid if ok_call and _GRID.match(grid) else "")
+
+
+def _station_args():
+    a = []
+    if _STATION["call"]:
+        a += ["-c", _STATION["call"]]
+        if _STATION["grid"]:
+            a += ["-G", _STATION["grid"]]
+    return a
+
+
 def _jt9_decode(x, dial_hz, flag, period, seconds, fs=FS, workdir=None):
     import tempfile
     exe = decoder_path("jt9")
@@ -196,7 +218,7 @@ def _jt9_decode(x, dial_hz, flag, period, seconds, fs=FS, workdir=None):
     d = workdir or tempfile.mkdtemp(prefix="uranus_jt9_")
     wav = os.path.join(d, "000000_000000.wav")
     _write_wav(wav, x, fs)
-    out = subprocess.run([exe, flag, "-p", period, "-d", "3", "-L", "100", "-H", "3200",
+    out = subprocess.run([exe, flag, "-p", period, "-d", "3", "-L", "100", "-H", "3200", *_station_args(),
                           "-a", d, "-t", d, wav], capture_output=True, text=True, timeout=60, cwd=d, **_HIDE).stdout
     res = []
     for line in out.splitlines():

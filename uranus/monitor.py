@@ -78,6 +78,8 @@ class Listener:
     def __init__(self, cfg, reporter=None, spot_path=spots.DEFAULT_PATH, on_event=None):
         st, rx = cfg["station"], cfg.get("receive", {})
         self.call, self.grid = st["callsign"], st["grid"]
+        from . import wsjt as _wsjt
+        _wsjt.set_station(self.call, self.grid)       # deep decode: jt9 a priori decoding for our call
         self.mode = {"urc": "pumpkin"}.get(rx.get("mode", "pumpkin"), rx.get("mode", "pumpkin"))
         default = {"pumpkin": "PUMPKIN-60", "cucumber": "CUCUMBER-60", "ft8": "FT8", "ft4": "FT4", "wspr": "WSPR",
                    "aprs": "APRS", "auto": "AUTO"}.get(self.mode, "UR-60")

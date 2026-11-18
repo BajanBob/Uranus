@@ -180,6 +180,8 @@ C = {                            # v0.16 faceplate: deep blue, with blue / red /
     "green": "#25e39a", "blue": "#2f80ff", "red": "#ff4458",
     "lilac": "#6aa8ff",                                          # the LISTENING colour - unchanged
     "amber": "#ffcc66", "dark": "#06102a",
+    "purple": "#b07cff",                                         # LISTENING (lamp and slot bar)
+    "gold": "#ffc832",                                           # DECODING (slot bar)
 }
 UI = "Segoe UI" if os.name == "nt" else "DejaVu Sans"
 MONO = "Consolas" if os.name == "nt" else "DejaVu Sans Mono"
@@ -190,7 +192,7 @@ STATES = {                       # lamp colour, label
     "dry": (C["amber"], "DRY RUN"),
     "air": (C["amber"], "ON AIR"),          # beacon session running, waiting for the next slot
     "tx": (C["red"], "TRANSMITTING"),       # PTT keyed right now
-    "listen": (C["lilac"], "LISTENING"),
+    "listen": (C["purple"], "LISTENING"),
     "off": (C["muted"], "PAUSED"),          # timetable: a pause window
     "ok": (C["green"], "READY"),
 }
@@ -333,6 +335,7 @@ class App(tk.Tk):
         self._tick = 0
         self.evq = queue.Queue()             # listen-mode events from the decoder thread
         self.dec = {"type": "idle"}          # latest decoder state for the status panel
+        self.tx_on = None                    # {start, seconds, where, dry} while the PTT is keyed
         self.ticker_items = []               # "heard" messages scrolling along the bottom
         self.heard_seen = set()
         self.heard_calls = set()             # stations heard this session, so busy modes alert only once each
@@ -589,7 +592,7 @@ class App(tk.Tk):
         self.dec_bar = tk.Canvas(dec, height=10, bg=C["panel2"], highlightthickness=0)
         self.dec_bar.pack(fill="x", pady=(2, 4))
         self.dec_fill = self.dec_bar.create_rectangle(0, 0, 0, 10, fill=C["blue"], width=0)
-        Tooltip(self.dec_bar, "Progress through the current slot: blue while recording, amber while decoding.")
+        Tooltip(self.dec_bar, "Purple: listening (recording the slot). Gold: decoding. Red: transmitting.")
         self.dec_line = tk.Label(dec, text="", bg=C["panel"], fg=C["muted"], font=(UI, 10), anchor="w",
                                  justify="left", wraplength=420)
         self.dec_line.pack(fill="x")
@@ -720,10 +723,13 @@ class App(tk.Tk):
                 self.set_state("off", f"Paused until {when}. Press Stop to end.")
             return
         if t == "tx_start":
+            self.tx_on = {"start": time.time(), "seconds": float(e.get("seconds") or 0) or 1.0,
+                          "where": f"{e['mode'].upper()} on {e['freq_mhz']:.4f} MHz", "dry": dry}
             if not dry:
                 self.set_state("tx", f"Transmitting {e['mode'].upper()} on {e['freq_mhz']:.4f} MHz "
                                      f"({e['seconds']:.0f} s). Press Stop to end after this transmission.")
         elif t == "tx_end":
+            self.tx_on = None
             swr = e.get("swr")
             if swr:
                 self.print(f"  sent {e['label']}, SWR {swr:.1f}\n")
@@ -750,6 +756,7 @@ class App(tk.Tk):
         if e["count"]:
             return f"Slot {hhmm}: {e['count']} decode(s)  ✔"
         hint = ("  · no audio from the radio: check USB AF output level" if lv < -70 else
+                "  · audio low: raise the radio's USB AF output to about -40 to -30 dBFS" if lv < -50 else
                 "  · audio too loud: lower USB AF output level" if lv > -3 else "")
         return f"Slot {hhmm}: no decode · audio {lv:.0f} dBFS{hint}"
 
@@ -760,6 +767,18 @@ class App(tk.Tk):
         dial = e.get("dial_hz", 0) / 1e6 if e.get("dial_hz") else None
         where = f"{sub} on {dial:.4f} MHz" if dial else sub
         t = e["type"]
+        tx = getattr(self, "tx_on", None)
+        if tx and self.runner is not None and now - tx["start"] < tx["seconds"] + 5:
+            done = min(1.0, (now - tx["start"]) / tx["seconds"])
+            left = max(0, int(tx["start"] + tx["seconds"] - now))
+            dry = tx.get("dry")
+            self.dec_head.config(text=("Dry run · " if dry else "Transmitting · ") + tx["where"],
+                                 fg=C["amber"] if dry else C["red"])
+            self.dec_line.config(text=("Dry run: nothing is sent. " if dry else "PTT keyed. ")
+                                 + f"{int(done * tx['seconds'])} of {int(tx['seconds'])} s, {left} s to go.")
+            self.dec_bar.itemconfig(self.dec_fill, fill=C["amber"] if dry else C["red"])
+            self.dec_bar.coords(self.dec_fill, 0, 0, w * done, 10)
+            return
         beacon_listening = getattr(self.runner, "decoding", False)
         if self.runner is not None and hasattr(self.runner, "decoding") and not beacon_listening:
             self.dec_head.config(text="Beacon transmitting", fg=C["red"])
@@ -781,25 +800,29 @@ class App(tk.Tk):
             self.dec_bar.coords(self.dec_fill, 0, 0, 0, 10)
         elif t == "recording":
             done = min(1.0, max(0.0, (now - e["start"]) / e["rec_s"]))
-            self.dec_head.config(text=f"Listening · {where}", fg=C["blue"])
+            self.dec_head.config(text=f"Listening · {where}", fg=C["purple"])
             if sub == "APRS":
                 self.dec_line.config(text="Listening continuously for APRS packets, decoding every 10 seconds")
-                self.dec_bar.itemconfig(self.dec_fill, fill=C["blue"])
+                self.dec_bar.itemconfig(self.dec_fill, fill=C["purple"])
                 self.dec_bar.coords(self.dec_fill, 0, 0, w * done, 10)
                 return
             self.dec_line.config(text=f"Recording slot {time.strftime('%H:%M:%S', time.gmtime(e['start']))}: "
                                       f"{int(done * e['rec_s'])} of {int(e['rec_s'])} s, then decoding")
-            self.dec_bar.itemconfig(self.dec_fill, fill=C["blue"])
+            self.dec_bar.itemconfig(self.dec_fill, fill=C["purple"])
             self.dec_bar.coords(self.dec_fill, 0, 0, w * done, 10)
         elif t == "decoding":
-            self.dec_head.config(text=f"Decoding · {where}", fg=C["amber"])
+            self.dec_head.config(text=f"Decoding · {where}", fg=C["gold"])
             self.dec_line.config(text="Identifying signals by their signatures, then decoding..." if sub == "AUTO"
                                  else f"Searching the recording for {sub} signals"
                                  + (" with WSJT-X's decoder..." if sub in ("FT8", "FT4", "WSPR") else "..."))
-            self.dec_bar.itemconfig(self.dec_fill, fill=C["amber"])
-            self.dec_bar.coords(self.dec_fill, 0, 0, w, 10)
+            # Decoding a slot takes jt9 only a second or two, so a gold block sweeps across while it works
+            phase = (now * 0.9) % 2.0
+            pos = phase if phase <= 1 else 2 - phase
+            seg = w * 0.28
+            self.dec_bar.itemconfig(self.dec_fill, fill=C["gold"])
+            self.dec_bar.coords(self.dec_fill, pos * (w - seg), 0, pos * (w - seg) + seg, 10)
         elif t == "result":
-            self.dec_head.config(text=f"Listening · {where}", fg=C["blue"])
+            self.dec_head.config(text=f"Listening · {where}", fg=C["purple"])
             self.dec_line.config(text="Next slot starting shortly.")
 
     # ---------------------------------------------------------- AUTO: identified signals
