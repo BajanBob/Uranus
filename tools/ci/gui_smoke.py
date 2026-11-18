@@ -96,7 +96,12 @@ a.on_identified([
      "reasons": ["steady, unmodulated"]},
     {"mode": "Unknown", "family": "", "freq_hz": 700, "bw_hz": 30, "confidence": 0.2, "snr_db": -9, "seen": 1,
      "reasons": ["30 Hz wide"]}])
-assert len(a.wf_tags) == 8 and "FT8" in a.dec_last.cget("text")
+a.dec = {"type": "idle"}                    # dial from the MHz box
+a.on_decode({"call": "K1ABC", "grid": "FN42", "snr": -12, "freq_hz": int(float(a.v_dial.get().split()[0]) * 1e6) + 1219,
+             "mode": "FT8"})
+labels = [a.wf.itemcget(i, "text") for i in a.wf.find_withtag("tag") if a.wf.type(i) == "text"]
+assert "K1ABC" in labels and "PUMPKIN-15 82%" in labels and "FT8 94%" not in labels, labels   # decode replaces guess
+assert "Unknown" not in " ".join(labels) and "K1ABC" in a.pb_text.cget("text"), a.pb_text.cget("text")
 snap(a, "1-faceplate.png")
 a.runner = None
 
@@ -212,6 +217,31 @@ c.v_text.set("test")
 c.estimate()
 snap(c, "5-chat.png")
 c.close()
+# faceplate tools: weather fax (fed a synthetic chart), scanner, my frequencies, share
+from uranus import gui_tools as T, wefax   # noqa: E402
+wf = T.WefaxWindow(a)
+wf.geometry("+40+30")
+img = np.tile(np.linspace(0, 1, wefax.WIDTH), (60, 1))
+img[:, :40] = 0
+wf.rx = wefax.Receiver(outdir=os.path.join(os.environ.get("TEMP", "/tmp"), "wfx"), on_line=wf.rows.append,
+                       on_event=wf._event)
+x = wefax.encode(img)
+for i in range(0, len(x), 1200):
+    wf.rx.feed(x[i:i + 1200])
+wf.tick()
+assert wf.rx.saved and "Saved" in wf.status.cget("text"), wf.status.cget("text")
+snap(wf, "8-weather-fax.png")
+wf.rx = None
+wf.destroy()
+sc = T.ScannerWindow(a)
+sc.geometry("+40+30")
+sc.q.put({"type": "scan", "state": "dwell", "chan": "14.074 MHz FT8 (20 m)", "until": time.time() + 150})
+sc.tick()
+snap(sc, "9-scanner.png")
+sc.destroy()
+sh = T.ShareWindow(a, "")
+assert "github.com/BajanBob/Uranus/releases" in T.SHARE_TEXT
+sh.destroy()
 a.update()
 a.destroy()
 print("GUI OK")
