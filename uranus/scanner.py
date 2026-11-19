@@ -123,12 +123,22 @@ class Scanner:
         cfg["receive"] = {**cfg.get("receive", {}), "mode": mode, "submode": submode_of(mode),
                           "dial_mhz": ch.mhz}
         got = {"decodes": 0, "signals": 0}
+        want = ch.mode.upper()
+        fam = {"cucumber": "pumpkin", "aprs": ("aprs", "aprs_hf")}.get(ch.mode, ch.mode)
+        fams = fam if isinstance(fam, tuple) else (fam,)
 
         def ev(e):
-            if e["type"] == "result":
-                got["decodes"] += e.get("count", 0)
-            elif e["type"] == "identified":
-                got["signals"] += sum(1 for i in e["items"] if i["mode"] != "Unknown" and i["confidence"] >= 0.5)
+            # Only the channel's own mode counts: 14.076 (JT65) also hears the top of the FT8 window,
+            # and a carrier or an FT8 signal there is no reason to stop on the JT65 channel.
+            t = e["type"]
+            if t == "result" and mode == ch.mode:
+                got["decodes"] += e.get("count", 0)      # listening in the channel's own mode
+            elif t == "decode" and mode != ch.mode and str(e["spot"].get("mode", "")).upper().startswith(want):
+                got["decodes"] += 1
+            elif t == "message" and mode != ch.mode and str(e.get("mode", "")).upper().startswith(want):
+                got["decodes"] += 1
+            elif t == "identified":
+                got["signals"] += sum(1 for i in e["items"] if i.get("family") in fams and i["confidence"] >= 0.5)
             self.on_event(e)
         self._cur = threading.Event()
         lis = self.Listener(cfg, self.reporter, on_event=ev)

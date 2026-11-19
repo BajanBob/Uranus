@@ -1007,13 +1007,16 @@ class App(tk.Tk):
     def on_identified(self, items):
         known = [i for i in items if i["mode"] != "Unknown"]
         for i in known:
-            if i["confidence"] >= 0.5:
+            if i["mode"] == "Birdies":               # one label for the whole set of spurious lines
+                self._pb_add("Birdies", i["freq_hz"], f"Birdies x{len(i.get('lines', [])) or 3}", decoded=False,
+                             detail="; ".join(i["reasons"][:1]))
+            elif i["confidence"] >= 0.5:
                 name = i["mode"].split(" ")[0]
                 self._pb_add(name, i["freq_hz"], f"{name} {i['confidence']:.0%}", decoded=False,
                              detail="; ".join(i["reasons"][:1]))
         self._draw_tags()
         for i in known:
-            if i["mode"] not in self.ident_seen and i["confidence"] >= 0.5:
+            if i["mode"] not in self.ident_seen and i["confidence"] >= 0.5 and i["mode"] not in ("Carrier", "Birdies"):
                 self.ident_seen.add(i["mode"])
                 self.add_ticker(f"IDENTIFIED {i['mode']} at {i['freq_hz']:.0f} Hz ({i['confidence']:.0%}): "
                                 + ", ".join(i["reasons"][:2]), log=False)

@@ -74,6 +74,21 @@ def receive_rig_mode(rx):
     return "FM" if rx.get("mode") in ("cucumber", "aprs") else "USB"
 
 
+def merge_birdies(items, min_lines=3):
+    """Three or more steady unmodulated carriers in one passband are almost always 'birdies' (spurious
+    lines from the computer, its USB audio or a power supply), not stations: show them as one item."""
+    car = [i for i in items if i["mode"] == "Carrier"]
+    if len(car) < min_lines:
+        return items
+    hz = sorted(round(i["freq_hz"]) for i in car)
+    one = {"mode": "Birdies", "family": "", "freq_hz": hz[0], "bw_hz": hz[-1] - hz[0],
+           "confidence": round(min(0.95, 0.5 + 0.08 * len(car)), 2), "snr_db": max(i.get("snr_db", 0) for i in car),
+           "reasons": [f"{len(car)} steady carriers at {', '.join(str(h) for h in hz)} Hz",
+                       "spurious lines (birdies) from the computer, USB audio or a power supply, not stations"],
+           "seen": max(i.get("seen", 1) for i in car), "lines": hz}
+    return [i for i in items if i["mode"] != "Carrier"] + [one]
+
+
 # Slow modes AUTO may follow for one whole slot of their own, and the listen submode used to do it.
 FOLLOW = {"wspr": "WSPR", "q65": "Q65", "jt65": "JT65", "fst4w": "FST4W", "pumpkin": "", "ur": ""}
 
@@ -192,6 +207,7 @@ class Listener:
                             reasons=[f"decoded as {near[0]} (signature first suggested {d.mode})"])
                 relabelled.add(id(d))
             items.append(item)
+        items = merge_birdies(items)
         self.on_event({"type": "identified", "start": self.block_t0, "items": items})
         for i in items:
             if i["mode"] != "Unknown":

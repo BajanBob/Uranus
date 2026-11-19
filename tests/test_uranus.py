@@ -1099,6 +1099,9 @@ class TestFaceplateTools(unittest.TestCase):
                 rx = self.cfg["receive"]
                 calls.append((rx["mode"], rx["dial_mhz"]))
                 busy = rx["dial_mhz"] == 14.074 and len(calls) < 4
+                if rx["mode"] == "auto":                # AUTO: FT8 decodes, plus overlap on 14.076
+                    for _ in range(3 if busy or rx["dial_mhz"] == 14.076 else 0):
+                        self.ev({"type": "decode", "spot": {"mode": "FT8"}})
                 self.ev({"type": "result", "count": 3 if busy else 0})
                 if len(calls) > 8:
                     sc.halt()
@@ -1316,6 +1319,19 @@ class TestRoadmapFeatures(unittest.TestCase):
         net = ping.network(os.path.join(d, "paths.jsonl"))
         self.assertEqual([(p["heard"], p["by"], p["snr"]) for p in net], [("K1ABC", "W9XYZ", -15)])
         self.assertIn('"net": [{"a": "K1ABC"', mapgen.render([], "8P5AB", "GK03", net=net))
+
+    def test_steady_carriers_are_grouped_as_birdies(self):
+        from uranus import monitor, sigint
+        items = [{"mode": "Carrier", "family": "", "freq_hz": f, "bw_hz": 3, "confidence": .7, "snr_db": 5,
+                  "reasons": [], "seen": 1} for f in (997, 1997, 2247, 2997)]
+        out = monitor.merge_birdies(items + [{"mode": "FT8", "family": "ft8", "freq_hz": 300, "bw_hz": 50,
+                                              "confidence": 1, "snr_db": 0, "reasons": [], "seen": 1}])
+        self.assertEqual([i["mode"] for i in out], ["FT8", "Birdies"])
+        self.assertEqual(out[1]["lines"], [997, 1997, 2247, 2997])
+        self.assertEqual(len(monitor.merge_birdies(items[:2])), 2)            # two carriers may be stations
+        t = np.arange(15 * 12000) / 12000
+        x = np.random.default_rng(1).normal(0, 1, len(t)) + sum(.4 * np.sin(2 * np.pi * f * t) for f in (997, 1997, 2247))
+        self.assertIn("Birdies", [f.name for f in sigint.identify(x, dial_hz=14.076e6)])
 
     def test_wefax_autopilot_frequencies(self):
         from uranus import wefax

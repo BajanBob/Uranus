@@ -70,6 +70,10 @@ INFO = {
                               "solar inverter. Not a radio signal.",
                               "Rough whistles or a raspy buzz at evenly spaced pitches, often drifting.",
                               "Unplug chargers and lamps one by one to find it; fit ferrite chokes.", "Interference"),
+    "Birdies": ("Several steady carriers in the passband at once: spurious lines made by the computer, its USB "
+                "audio or a power supply (or the radio itself), not stations.",
+                "Pure whistles that never change.", "Try another USB port, a ferrite choke on the USB lead, or run on "
+                "battery; the Interference doctor measures which helps.", "Birdie"),
     "Impulse noise": ("Clicks from electrical sparks: chargers, motors, thermostats, electric fences, or lightning "
                       "far away.", "Crackles and pops.", "Turn on the radio's noise blanker; Uranus's noise filter "
                       "blanks clicks before decoding.", "Interference"),
@@ -372,6 +376,12 @@ def identify(x, fs=FS, dial_hz=0.0, t0=None):
             if q > 4:
                 reasons.append(f"keying at {baud:.0f} baud")
         out.append(Finding(name, d.confidence, d.freq_hz, d.bw_hz, reasons))
+    car = [f for f in out if f.name == "Carrier"]
+    if len(car) >= 3:                                # several steady lines at once: birdies, not stations
+        hz = sorted(round(f.freq_hz) for f in car)
+        out = [f for f in out if f.name != "Carrier"] + [Finding(
+            "Birdies", round(min(0.95, 0.5 + 0.08 * len(car)), 2), float(hz[0]), float(hz[-1] - hz[0]),
+            [f"{len(car)} steady carriers at {', '.join(str(h) for h in hz)} Hz"], "interference")]
     if not [f for f in out if f.kind == "signal"]:
         snr = _band_snr(x)
         if snr < 3:
