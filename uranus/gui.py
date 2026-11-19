@@ -240,7 +240,14 @@ STATES = {                       # lamp colour, label
 }
 
 
-def apply_theme(root):
+def screen_layout(choice, screen_h):
+    """'full' (every tool its own button, roomier) or 'compact' (fits 768-pixel-high screens)."""
+    if choice in ("full", "compact"):
+        return choice
+    return "compact" if screen_h < 900 else "full"
+
+
+def apply_theme(root, compact=False):
     st = ttk.Style(root)
     try:
         st.theme_use("clam")
@@ -270,7 +277,7 @@ def apply_theme(root):
     for name, base in (("Side", "TButton"), ("SideAccent", "Accent.TButton"), ("SideDanger", "Danger.TButton"),
                        ("SideInfo", "Info.TButton"), ("SideGo", "Go.TButton")):
         st.configure(f"{name}.TButton", **{k: st.lookup(base, k) for k in ("background", "foreground", "font")
-                                          if st.lookup(base, k)}, padding=(12, 3), anchor="w")
+                                          if st.lookup(base, k)}, padding=(12, 3) if compact else (12, 5), anchor="w")
         st.map(f"{name}.TButton", background=st.map(base, "background"), foreground=st.map(base, "foreground"))
     st.configure("Side.TButton", background=C["pink"], foreground="#ffffff", font=(UI, 10, "bold"))
     st.map("Side.TButton", background=[("pressed", C["pink_hi"]), ("active", C["pink_hi"])],
@@ -375,7 +382,8 @@ class App(tk.Tk):
                 pass
         from . import speech
         speech.ENABLED = bool(ACCESS.get("speak"))
-        apply_theme(self)
+        self.layout = screen_layout(ACCESS.get("layout", "auto"), sh)
+        apply_theme(self, compact=self.layout == "compact")
         self.q = queue.Queue()
         self.runner = None
         self.worker = None
@@ -502,8 +510,29 @@ class App(tk.Tk):
                            "Lilac: listening")
 
     def _sidebar(self, parent):
-        side = ttk.Frame(parent, width=240)
-        side.pack(side="left", fill="y")
+        # the menu scrolls when it is taller than the window (full layout on a small screen)
+        holder = ttk.Frame(parent, width=240)
+        holder.pack(side="left", fill="y")
+        cv = tk.Canvas(holder, bg=C["bg"], highlightthickness=0, width=200)
+        sb = ttk.Scrollbar(holder, orient="vertical", command=cv.yview)
+        cv.configure(yscrollcommand=sb.set)
+        cv.pack(side="left", fill="y")
+        side = ttk.Frame(cv)
+        cv.create_window(0, 0, anchor="nw", window=side)
+
+        def fit(_e=None):
+            cv.configure(scrollregion=cv.bbox("all"), width=side.winfo_reqwidth())
+            if side.winfo_reqheight() > cv.winfo_height() > 1:
+                if not sb.winfo_ismapped():
+                    sb.pack(side="left", fill="y")
+            elif sb.winfo_ismapped():
+                sb.pack_forget()
+        side.bind("<Configure>", fit)
+        cv.bind("<Configure>", fit)
+        cv.bind("<Enter>", lambda e: cv.bind_all("<MouseWheel>", lambda ev: cv.yview_scroll(
+            -1 if ev.delta > 0 else 1, "units")))
+        cv.bind("<Leave>", lambda e: cv.unbind_all("<MouseWheel>"))
+        full = getattr(self, "layout", "compact") == "full"
         groups = [
             ("GET STARTED", [
                 ("Setup wizard", self.wizard, "Accent", "Step-by-step: callsign and grid, radio (including the "
@@ -543,10 +572,24 @@ class App(tk.Tk):
                  "hears you and the sun."),
                 ("Screenshot + share", self.share, None, "Save a picture of this screen, and share Uranus "
                  "(free to share) by WhatsApp or email."),
-                ("More tools...", self.demos_menu, None, "Show plan, dry run, Pumpkin and Cucumber decoding "
-                 "demos, the map demo, link budget and the output folder."),
+                ("Demos and tools..." if full else "More tools...", self.demos_menu, None,
+                 "Show plan, dry run, Pumpkin and Cucumber decoding demos, the map demo, link budget and the "
+                 "output folder" + ("." if full else "; also Station health, Interference doctor, "
+                                    "Accessibility, Fax gallery and the settings file.")),
             ]),
         ]
+        if full:                             # the roomier layout: every tool has its own button
+            groups.append(("STATION CARE", [
+                ("Station health", self.health_check, None, "Audio, clock, radio control, SWR limit, decoders, "
+                 "disk and internet, each with a fix."),
+                ("Interference doctor", self.doctor, None, "Step-by-step hunt for the noise that hides weak "
+                 "signals."),
+                ("Accessibility", self.access, None, "Speech, large text, colour-blind colours, faceplate "
+                 "colours and screen layout."),
+                ("Fax gallery", self.fax_gallery, None, "The newest weather charts."),
+                ("Edit settings file", self.edit_config, None, "Open uranus.toml in a text editor for "
+                 "everything else (timing, APRS details, frequencies)."),
+            ]))
         for title, items in groups:
             ttk.Label(side, text=title, style="Section.TLabel").pack(anchor="w", pady=(8, 3))
             for text, cmd, style, tip in items:

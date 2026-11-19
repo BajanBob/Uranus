@@ -260,6 +260,8 @@ assert T.apply_mission(a, "dx", open_tools=False) and g.load_cfg()["mission"]["n
 assert "DX HUNT" in a.mission_lbl.cget("text")
 a.run_command("beacon wspr every 10 minutes overnight")
 assert g.load_cfg()["timetable"]["windows"][0] == "22:00-06:00 transmit 10"
+assert g.screen_layout("auto", 768) == "compact" and g.screen_layout("auto", 1080) == "full"
+assert g.screen_layout("full", 768) == "full"
 for W in (T.DoctorWindow, T.AccessWindow, T.FaxGallery):
     w = W(a)
     w.update()

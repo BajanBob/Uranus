@@ -1076,8 +1076,8 @@ class AccessWindow(tk.Toplevel):
     def __init__(self, app):
         super().__init__(app)
         self.app = app
-        self.title("Uranus - Accessibility and faceplate")
-        self.geometry("620x420")
+        self.title("Uranus - Accessibility, faceplate and layout")
+        self.geometry("640x520")
         self.configure(bg=G.C["bg"])
         acc = G.load_cfg().get("access", {})
         f = ttk.Frame(self, padding=14)
@@ -1097,6 +1097,19 @@ class AccessWindow(tk.Toplevel):
         self.v_theme = tk.StringVar(value=acc.get("theme", "uranus"))
         ttk.Combobox(row, textvariable=self.v_theme, values=list(G.PALETTES), state="readonly", width=14).pack(
             side="left", padx=8)
+        row2 = ttk.Frame(f)
+        row2.pack(fill="x", pady=(12, 4))
+        ttk.Label(row2, text="Screen layout").pack(side="left")
+        names = {"auto": "Auto (by screen size)", "full": "Full: every tool a button",
+                 "compact": "Compact: fits 768-pixel screens"}
+        self.layouts = names
+        self.v_layout = tk.StringVar(value=names.get(acc.get("layout", "auto"), names["auto"]))
+        ttk.Combobox(row2, textvariable=self.v_layout, values=list(names.values()), state="readonly",
+                     width=32).pack(side="left", padx=8)
+        tk.Label(f, text="Full is the roomier layout with Station health, Interference doctor, Accessibility, Fax "
+                         "gallery and the settings file as buttons; Compact keeps them under More tools. On a small "
+                         "screen the button list scrolls.", bg=G.C["bg"], fg=G.C["muted"], font=(G.UI, 9),
+                 wraplength=580, justify="left").pack(anchor="w")
         tk.Label(f, text="uranus = navy (default) · tradewind = brushed grey and amber, like Tradewind · "
                          "highcontrast = black and white. Takes effect when Uranus restarts.",
                  bg=G.C["bg"], fg=G.C["muted"], font=(G.UI, 9), wraplength=580, justify="left").pack(anchor="w")
@@ -1114,12 +1127,14 @@ class AccessWindow(tk.Toplevel):
     def save(self):
         from . import speech
         err = G.write_keys({("access", "speak"): self.v_speak.get(), ("access", "large_text"): self.v_large.get(),
-                            ("access", "colourblind"): self.v_cb.get(), ("access", "theme"): self.v_theme.get()})
+                            ("access", "colourblind"): self.v_cb.get(), ("access", "theme"): self.v_theme.get(),
+                            ("access", "layout"): next(k for k, v in self.layouts.items() if v == self.v_layout.get())})
         if err:
             messagebox.showerror("Accessibility", err, parent=self)
             return
         speech.ENABLED = self.v_speak.get()
-        self.app.print("Accessibility saved. Large text, colours and faceplate apply when Uranus restarts.\n")
+        self.app.print("Accessibility saved. Large text, colours, faceplate and screen layout apply when Uranus "
+                       "restarts.\n")
         self.destroy()
 
 
