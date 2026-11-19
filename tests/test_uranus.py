@@ -1338,7 +1338,7 @@ class TestRoadmapFeatures(unittest.TestCase):
     def test_stop_during_recording_skips_the_decode(self):
         from uranus import monitor
         cfg = tomllib.loads(open("config/uranus.toml", encoding="utf-8").read())
-        cfg["receive"] = {"mode": "ft8", "dial_mhz": 14.074}
+        cfg["receive"] = {"mode": "pumpkin", "submode": "PUMPKIN-15", "dial_mhz": 144.49}   # needs no WSJT-X
         events = []
         lis = monitor.Listener(cfg, spot_path=tempfile.mktemp(), on_event=events.append)
         orig = monitor.record
