@@ -53,6 +53,11 @@ def _stop_audio():
 _APLAY = {}
 
 
+def abort_tx():
+    """Stop pressed while transmitting: cut the audio now; transmit() then drops PTT in its finally block."""
+    _stop_audio()
+
+
 def write_wav(path, audio, fs):
     pcm = (np.clip(audio, -1, 1) * 32767).astype("<i2")
     with wave.open(path, "wb") as w:

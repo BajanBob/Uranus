@@ -310,6 +310,8 @@ class TestBandsRadiosSDR(unittest.TestCase):
             msg = fp.check(f.band, f.mode, f.mhz, f.region if f.region != "All" else "R2")
             if f.band == "60m":
                 self.assertNotIn("outside", msg, f)            # 60 m always reminds about national rules
+            elif f.mode == "aprs" and "APRS channel for" in msg:
+                self.assertNotIn("outside", msg, f)            # national APRS channels: a reminder, not an error
             else:
                 self.assertEqual(msg, "", f)
             self.assertTrue(fp.segment(f.band, f.mhz), f)
@@ -1332,6 +1334,37 @@ class TestRoadmapFeatures(unittest.TestCase):
         t = np.arange(15 * 12000) / 12000
         x = np.random.default_rng(1).normal(0, 1, len(t)) + sum(.4 * np.sin(2 * np.pi * f * t) for f in (997, 1997, 2247))
         self.assertIn("Birdies", [f.name for f in sigint.identify(x, dial_hz=14.076e6)])
+
+    def test_stop_during_recording_skips_the_decode(self):
+        from uranus import monitor
+        cfg = tomllib.loads(open("config/uranus.toml", encoding="utf-8").read())
+        cfg["receive"] = {"mode": "ft8", "dial_mhz": 14.074}
+        events = []
+        lis = monitor.Listener(cfg, spot_path=tempfile.mktemp(), on_event=events.append)
+        orig = monitor.record
+
+        def rec(sec, device="default", fs=12000, stop=None):
+            stop.set()                                   # Stop pressed half-way through the slot
+            return np.zeros(int(sec * fs / 2))
+        monitor.record = rec
+        import time as _t
+        real = _t.time
+        try:
+            base = (real() // 15 + 1) * 15
+            _t.time = lambda: base
+            lis.run(slots=3)
+        finally:
+            _t.time = real
+            monitor.record = orig
+        kinds = [e["type"] for e in events]
+        self.assertIn("recording", kinds)
+        self.assertNotIn("decoding", kinds)
+
+    def test_aprs_channels_for_other_countries_are_flagged(self):
+        from uranus import freqplan
+        self.assertEqual(freqplan.check("2m", "aprs", 144.390), "")
+        self.assertIn("Brazil", freqplan.check("2m", "aprs", 145.570))
+        self.assertEqual(freqplan.check("2m", "aprs", 145.825), "")          # ISS / satellites, worldwide
 
     def test_wefax_autopilot_frequencies(self):
         from uranus import wefax

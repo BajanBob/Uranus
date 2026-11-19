@@ -24,7 +24,9 @@ log = logging.getLogger("uranus.listen")
 FS = 12000
 
 
-def record(seconds, device="default", fs=FS):
+def record(seconds, device="default", fs=FS, stop=None):
+    """Record `seconds` of receive audio. With `stop` (an Event), returns early - with what it has - as soon as
+    Stop is pressed, so Stop never waits for a whole slot."""
     try:
         import sounddevice as sd
         from . import spectrum
@@ -44,7 +46,10 @@ def record(seconds, device="default", fs=FS):
         spectrum.external(True)
         try:
             with sd.InputStream(samplerate=fs, channels=1, dtype="float32", device=dev, blocksize=600, callback=cb):
-                done.wait(seconds + 10)
+                end = time.time() + seconds + 10
+                while not done.wait(0.1) and time.time() < end:
+                    if stop is not None and stop.is_set():
+                        break
         finally:
             spectrum.external(False)
         x = np.concatenate(chunks) if chunks else np.zeros(0)
@@ -330,7 +335,13 @@ class Listener:
             if self.source == "rtl_fm":
                 x = sdr.rtl_record(rec_s, self.dial_hz, self.rtl_ppm, self.rtl_gain)
             else:
-                x = record(rec_s, self.device)
+                import inspect
+                if "stop" in inspect.signature(record).parameters:
+                    x = record(rec_s, self.device, stop=self.stop)
+                else:                                      # a record() without stop (tests, plug-ins)
+                    x = record(rec_s, self.device)
+            if self.stop.is_set():
+                break                                      # Stop pressed while recording: don't decode
             self.on_event({"type": "decoding", "start": start, **self._info()})
             level_db = float(20 * np.log10(np.sqrt(np.mean(np.square(x))) + 1e-9)) if len(x) else -120.0
             if self.nf is not None and len(x):

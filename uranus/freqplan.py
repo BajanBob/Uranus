@@ -187,6 +187,11 @@ def check(band, mode, mhz, region="R2"):
     f = find(band, mode, mhz)
     if f and f.region not in ("All", region):
         return f"{mhz:.3f} MHz is a Region {f.region[1]} frequency; check your licence and local band plan."
+    if mode == "aprs" and f and f.note.startswith("APRS:") and "worldwide" not in f.note \
+            and "Caribbean" not in f.note and not is_hf(mhz) and f.region in ("All", region):
+        where = f.note.split(":", 1)[1].split(";")[0].strip()
+        return (f"{mhz:.3f} MHz is the APRS channel for {where} only. Digipeaters and i-gates in North America "
+                "and the Caribbean use 144.390, so stations there will not hear it.")
     if mode == "wspr":
         std = wspr_dial(band)
         if std and abs(mhz - std) > 0.00005:

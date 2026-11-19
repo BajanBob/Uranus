@@ -730,7 +730,8 @@ class App(tk.Tk):
                     "no GPS needed.\n-15 = 15-second slots, -60 = 60-second slots (about 6 dB more sensitive).")
         ttk.Label(sel, text="MHz", style="CardMuted.TLabel").pack(side="left", padx=(6, 0))
         self.v_dial = tk.StringVar(value="144.490")
-        de = ttk.Combobox(sel, textvariable=self.v_dial, width=10, values=self._dial_options("PUMPKIN-60"))
+        de = ttk.Combobox(sel, textvariable=self.v_dial, width=10, values=self._dial_options("PUMPKIN-60"),
+                          postcommand=lambda: self._wide_dropdown(de, 95))
         self.dial_cb = de
         de.pack(side="left", padx=6)
         de.bind("<<ComboboxSelected>>", lambda e: (self.v_dial.set(self.v_dial.get().split()[0]), self.save_listen()))
@@ -788,14 +789,33 @@ class App(tk.Tk):
             r.nf = NoiseFilter() if on else None
         self.print(f"Noise filter {'on' if on else 'off'}" + (" (applied to the next slot)" if lis else "") + ".\n")
 
+    def _wide_dropdown(self, cb, chars):
+        """Let a narrow combobox open a wide list, so frequency descriptions are not cut off."""
+        try:
+            pop = self.tk.eval(f"ttk::combobox::PopdownWindow {cb}")
+        except tk.TclError:
+            return
+
+        def widen():
+            try:
+                geo = self.tk.eval(f"wm geometry {pop}")        # WxH+X+Y as Tk placed it
+                size, x, y = geo.split("+")[0], geo.split("+")[1], geo.split("+")[2]
+                w, h = (int(v) for v in size.split("x"))
+                want = max(w, int(chars * 7.5))
+                self.tk.eval(f"wm geometry {pop} {want}x{h}+{x}+{y}")
+            except (tk.TclError, ValueError, IndexError):
+                pass
+        self.after(1, widen)
+
     def _dial_options(self, sub):
         from . import freqplan
         mode = MODE_OF[sub.split("-")[0]]
         if mode == "auto":
             return [f"{freqplan.fmt(o.mhz)}   {freqplan.BAND_NAMES[o.band]} · {o.mode.upper()} · {o.note}"
                     for o in sorted(freqplan.PLAN, key=lambda o: o.mhz)]
+        opts = [o for b in freqplan.BAND_EDGES for o in freqplan.options(b, mode)]
         return [f"{freqplan.fmt(o.mhz)}   {freqplan.BAND_NAMES[o.band]} · {o.status} · {o.note}"
-                for b in freqplan.BAND_EDGES for o in freqplan.options(b, mode)]
+                for o in sorted(opts, key=lambda o: o.mhz)]           # low to high, like a dial
 
     def save_listen(self, mode_changed=False):
         sub = self.v_sub.get()
@@ -816,8 +836,16 @@ class App(tk.Tk):
             messagebox.showerror("Dial", "The dial frequency must be a number in MHz, e.g. 144.490.")
             return
         write_keys({("receive", "mode"): mode, ("receive", "submode"): sub, ("receive", "dial_mhz"): dial})
-        if self.runner is not None and hasattr(self.runner, "submode"):
-            self.print("Decoder change takes effect the next time you press Listen + decode.\n")
+        r = self.runner
+        from . import monitor as _mon
+        if isinstance(r, _mon.Listener) and (r.submode != sub or abs(r.dial_hz - dial * 1e6) > 1):
+            # listening with other settings: restart at once so the screen and the radio agree
+            self.restart_listen = True
+            self.print(f"Switching to {sub} on {dial} MHz...\n")
+            self.stop()
+            self.dec_line.config(text=f"Switching to {sub} on {dial} MHz...")
+        elif r is not None and hasattr(r, "submode"):
+            self.print("Decoder change takes effect the next time you press Listen + decode (Stop first).\n")
         self.update_decoder()
 
     def _cucumber_freq(self):
@@ -1387,6 +1415,9 @@ class App(tk.Tk):
                 threading.Thread(target=self.reporter.flush, daemon=True).start()
             self.dec = {"type": "idle"}
             err = getattr(self, "worker_error", "")
+            if getattr(self, "restart_listen", False) and not err:
+                self.restart_listen = False
+                self.after(300, self.listen)
             if err:
                 self.set_state("idle", "Stopped with an error: " + err[:120])
                 self.status.config(fg=C["red"])
@@ -1647,6 +1678,13 @@ class App(tk.Tk):
                 "3. Click Save. (To rehearse without keying: Demos and tools → Show plan / Dry run.)\n"
                 "4. Click ON AIR.", parent=self)
             return
+        if listen_only and not messagebox.askyesno(
+                "Timetable only listens",
+                "Your timetable has no transmit window (" + "; ".join(w.text() for w in sc["windows"]) + "), so ON AIR "
+                "will listen and decode but never transmit.\n\nTo transmit, open Timetable and add a window such as "
+                "'08:00-20:00 transmit 10', or turn the timetable off. (The DX hunt and Maritime missions only "
+                "listen.)\n\nStart listening anyway?", parent=self):
+            return
         backend = cfg.get("radio", {}).get("backend", "dry-run")
         if backend == "dry-run" and not messagebox.askyesno(
                 "Dry run - the radio will NOT transmit",
@@ -1844,7 +1882,16 @@ class App(tk.Tk):
     def stop(self):
         if self.runner:
             self.runner.stop.set()
-            self.set_state("busy", "Stopping after the current transmission or slot...")
+            halt = getattr(self.runner, "halt", None)          # scanner: also leave the current channel
+            if callable(halt):
+                halt()
+            tx = getattr(self, "tx_on", None)
+            if tx and time.time() - tx["start"] < tx["seconds"] + 2:
+                from .radio import abort_tx
+                abort_tx()                                      # cut the transmission; PTT drops at once
+                self.set_state("busy", "Stopping: transmission cut, PTT released...")
+            else:
+                self.set_state("busy", "Stopping...")
         elif self.worker:
             self.set_state("busy", "Waiting for the current task to finish...")
 
