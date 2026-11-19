@@ -1,6 +1,7 @@
 import os
 import sys
 import tomllib
+import tempfile
 import time
 import unittest
 
@@ -1057,6 +1058,24 @@ class TestFaceplateTools(unittest.TestCase):
         p = np.median(out, axis=0)
         self.assertGreater(np.corrcoef(p, prof)[0, 1], 0.98)    # phased: black margin at the left edge
         self.assertLess(p[:50].mean(), 0.15)
+
+    def test_wefax_finds_lpm_ioc_and_tuning_by_itself(self):
+        from uranus import wefax
+        rng = np.random.default_rng(4)
+        for lpm, ioc, ferr in ((60, 576, 80), (90, 576, -120), (120, 288, 40), (240, 288, 0)):
+            w = int(round(np.pi * ioc))
+            img = np.tile(np.linspace(0, 1, w), (lpm // 2, 1))
+            img[::7, w // 2:w // 2 + 40] = 0
+            x = np.concatenate([rng.normal(0, .3, 30000), wefax.encode(img, lpm=lpm, f_err_hz=ferr, ioc=ioc)])
+            ev = []
+            rx = wefax.Receiver(outdir=tempfile.mkdtemp(), on_event=ev.append)
+            for i in range(0, len(x), 1200):
+                rx.feed(x[i:i + 1200] + rng.normal(0, .3, len(x[i:i + 1200])))
+            mode = [e for e in ev if e["type"] == "mode"][-1]
+            self.assertEqual((mode["lpm"], mode["ioc"]), (lpm, ioc))
+            self.assertLess(abs(mode["offset_hz"] - ferr), 25)
+            self.assertEqual(len(rx.saved), 1)
+        self.assertEqual(wefax.Receiver(lpm=120, ioc=576).auto_lpm, False)
 
     def test_wefax_ignores_noise_and_dial_offset(self):
         from uranus import wefax

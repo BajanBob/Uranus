@@ -25,6 +25,8 @@ WIDTH = int(round(np.pi * IOC))           # 1809 pixels a line
 BLACK, WHITE = 1500.0, 2300.0
 CENTRE = 1900.0
 START_HZ, STOP_HZ = 300.0, 450.0          # IOC 576 start / stop modulation
+START_288_HZ = 675.0                      # IOC 288 start tone (stop is 450 Hz for both)
+LPM_CHOICES = (60, 90, 100, 120, 180, 240)
 OFFSET_KHZ = 1.9                          # USB dial = assigned frequency - 1.9 kHz
 MAX_LINES = 1800                          # 15 minutes: longer than any chart, then save anyway
 
@@ -104,14 +106,14 @@ def station_label(st):
 
 
 # ------------------------------------------------------------------ test signal
-def encode(image, fs=FS, lpm=LPM, start_s=5.0, phasing_lines=40, stop_s=5.0, f_err_hz=0.0):
+def encode(image, fs=FS, lpm=LPM, start_s=5.0, phasing_lines=40, stop_s=5.0, f_err_hz=0.0, ioc=IOC):
     """WEFAX audio for an image (rows x cols, 0 = black, 1 = white): start tone, phasing, picture, stop tone.
     Used by the tests and the demo."""
     img = np.clip(np.asarray(image, float), 0, 1)
     spl = fs * 60.0 / lpm
     lum = []
     n = int(start_s * fs)
-    lum.append((np.arange(n) * 2 * START_HZ / fs).astype(int) % 2 * 1.0)
+    lum.append((np.arange(n) * 2 * (START_HZ if ioc == 576 else START_288_HZ) / fs).astype(int) % 2 * 1.0)
     pulse = int(0.05 * spl)                                       # phasing: white line, 5 % black pulse
     for k in range(phasing_lines):
         a, b = int(round(k * spl)), int(round((k + 1) * spl))
@@ -144,6 +146,10 @@ class Discriminator:
         self.prev = 1 + 0j
 
     def __call__(self, x):
+        return np.clip((self.freq(x) - BLACK) / (WHITE - BLACK), 0, 1)
+
+    def freq(self, x):
+        """Instantaneous frequency of the audio, Hz."""
         x = np.asarray(x, float)
         t = (self.n0 + np.arange(len(x))) / self.fs
         self.n0 += len(x)
@@ -153,8 +159,7 @@ class Discriminator:
         y = np.where(np.abs(y) < 1e-12, 1e-12, y)
         prev = np.concatenate([[self.prev], y[:-1]])
         self.prev = y[-1]
-        f = CENTRE + np.angle(y * np.conj(prev)) * self.fs / (2 * np.pi)
-        return np.clip((f - BLACK) / (WHITE - BLACK), 0, 1)
+        return CENTRE + np.angle(y * np.conj(prev)) * self.fs / (2 * np.pi)
 
 
 def tone_power(lum, fs, hz):
@@ -173,38 +178,73 @@ def tone_power(lum, fs, hz):
 class Receiver:
     """Feed it audio blocks; it finds the start tone, phases, builds the chart line by line and saves a PNG
     when the stop tone comes (or after 15 minutes). `on_line(row)` gets every new (unphased) line for a live view,
-    `on_event(dict)` gets state changes and saved files."""
+    `on_event(dict)` gets state changes and saved files.
 
-    def __init__(self, fs=FS, ppm=0.0, outdir=None, label="wefax", on_line=None, on_event=None, auto_start=True):
+    Automatic settings (the defaults, lpm=None and ioc=None):
+      * IOC from the start tone: 300 Hz = IOC 576, 675 Hz = IOC 288
+      * tuning error: the start tone swings between black and white, so its average shows how far the radio
+        is off; black and white are moved to match (up to +-250 Hz)
+      * LPM: the first 12 seconds of the picture are tested for the line period that repeats best
+        (60, 90, 100, 120, 180 or 240 lines a minute)
+      * a chart joined without its start tone gets its black and white levels from the signal itself."""
+
+    MEASURE_S = 12.0
+
+    def __init__(self, fs=FS, ppm=0.0, outdir=None, label="wefax", on_line=None, on_event=None, auto_start=True,
+                 lpm=None, ioc=None):
         self.fs, self.ppm = fs, float(ppm)
         self.outdir = outdir or os.path.join(os.path.expanduser("~"), "Uranus", "wefax")
         self.label = label
         self.on_line = on_line or (lambda row: None)
         self.on_event = on_event or (lambda e: None)
         self.auto_start = auto_start
+        self.auto_lpm, self.auto_ioc = lpm is None, ioc is None
+        self.lpm, self.ioc = int(lpm or LPM), int(ioc or IOC)
         self.disc = Discriminator(fs)
+        self.wide = Discriminator(fs, bw=1900.0)    # tones and tuning error: passes the 675 Hz start tone
+        self.offset = 0.0
         self.reset()
 
     @property
     def spl(self):
-        return self.fs * 60.0 / LPM * (1 + self.ppm * 1e-6)
+        return self.fs * 60.0 / self.lpm * (1 + self.ppm * 1e-6)
+
+    @property
+    def width(self):
+        return int(round(np.pi * self.ioc))
+
+    @property
+    def black(self):
+        return BLACK + self.offset
+
+    @property
+    def white(self):
+        return WHITE + self.offset
+
+    def _lum(self, f):
+        return np.clip((f - self.black) / (self.white - self.black), 0, 1)
 
     def reset(self):
         self.state = "idle"                          # idle -> start -> image -> (saved) idle
         self.buf = np.zeros(0)                       # brightness waiting to become lines
         self.win = np.zeros(0)                       # last second of brightness, for tone detection
-        self.hits = {"start": 0, "stop": 0}
+        self.fwin = np.zeros(0)                      # last second of frequency, for the tuning error
+        self.hits = {"start": 0, "start288": 0, "stop": 0}
         self.lines, self.phase = [], None
         self.pos = 0.0                               # fractional line position within buf
+        self.mbuf, self.locked, self.from_tone = [], not self.auto_lpm, False
         self.saved = []
 
     # -- control
     def start_now(self):
         """Begin a chart immediately (joining one already in progress: the left edge may be off)."""
+        self.from_tone = False
         self._begin(phased=False)
 
     def finish(self):
         """Save what has been received so far."""
+        if self.state == "image" and not self.locked and self.mbuf:
+            self._lock()
         if self.state == "image" and len(self.lines) > 20:
             return self._save()
         self.state = "idle"
@@ -213,42 +253,85 @@ class Receiver:
     def _begin(self, phased=True):
         self.state = "image"
         self.lines, self.phase, self.buf, self.pos = [], (None if phased else 0), np.zeros(0), 0.0
+        self.mbuf, self.locked = [], not self.auto_lpm
         self.t_start = _dt.datetime.now(_dt.timezone.utc)
         self.on_event({"type": "start", "phased": phased})
+        if self.locked:
+            self._mode_event()
+
+    def _mode_event(self):
+        self.on_event({"type": "mode", "lpm": self.lpm, "ioc": self.ioc, "offset_hz": round(self.offset),
+                       "auto": self.auto_lpm or self.auto_ioc})
 
     # -- audio in
     def feed(self, x):
-        lum = self.disc(x)
-        self.win = np.concatenate([self.win, lum])[-self.fs:]
+        f = self.disc.freq(x)
+        fw = self.wide.freq(x)
+        self.win = np.concatenate([self.win, np.clip((fw - BLACK) / (WHITE - BLACK), -0.5, 1.5)])[-self.fs:]
+        self.fwin = np.concatenate([self.fwin, fw])[-self.fs:]
+        self.nwin = np.concatenate([getattr(self, "nwin", np.zeros(0)), self._lum(f)])[-self.fs:]
+        self.xwin = np.concatenate([getattr(self, "xwin", np.zeros(0)), np.asarray(x, float)])[-self.fs:]
         if len(self.win) >= self.fs:
-            start = tone_power(self.win, self.fs, START_HZ) > 0.06
-            stop = tone_power(self.win, self.fs, STOP_HZ) > 0.06
-            self.hits["start"] = self.hits["start"] + len(x) if start else 0
-            self.hits["stop"] = self.hits["stop"] + len(x) if stop else 0
-            if self.state == "idle" and self.auto_start and self.hits["start"] >= 1.5 * self.fs:
-                self.state = "start"
-                self.on_event({"type": "start_tone"})
-            elif self.state == "start" and not start:
+            # 300 / 450 Hz tones: the narrow discriminator is quieter; 675 Hz needs the wide one
+            s576 = tone_power(self.nwin, self.fs, START_HZ) > 0.06 or tone_power(self.win, self.fs, START_HZ) > 0.06
+            s288 = tone_power(self.win, self.fs, START_288_HZ) > 0.06 and not s576
+            stop = tone_power(self.nwin, self.fs, STOP_HZ) > 0.06 or tone_power(self.win, self.fs, STOP_HZ) > 0.06
+            for k, on in (("start", s576), ("start288", s288), ("stop", stop)):
+                self.hits[k] = self.hits[k] + len(x) if on else 0
+            if self.state == "idle" and self.auto_start and max(self.hits["start"], self.hits["start288"]) >= 1.5 * self.fs:
+                if self.auto_ioc:
+                    self.ioc = 576 if self.hits["start"] >= self.hits["start288"] else 288
+                off = tone_offset(self.xwin, self.fs)
+                if off is not None:                  # the tone sits on black and white: their midpoint
+                    self.offset = off
+                self.state, self.from_tone = "start", True
+                self.on_event({"type": "start_tone", "ioc": self.ioc, "offset_hz": round(self.offset)})
+            elif self.state == "start" and not (s576 or s288):
                 self._begin(phased=True)
-                # the window still holds the last of the start tone; begin cutting lines from here
-                lum = lum[-max(1, min(len(lum), len(x))):]
+                f = f[-max(1, min(len(f), len(x))):]   # begin cutting lines from here
             elif self.state == "image" and self.hits["stop"] >= 1.5 * self.fs:
-                self._cut(lum)
+                self._take(f)
+                if not self.locked:
+                    self._lock()
                 del self.lines[-int(2.5 * self.fs / self.spl) - 1:]     # stop tone heard so far
                 return self._save()
         if self.state == "image":
-            self._cut(lum)
-            if len(self.lines) >= MAX_LINES:
+            self._take(f)
+            if len(self.lines) >= 15 * self.lpm:
                 return self._save()
         return None
 
+    def _take(self, f):
+        if self.locked:
+            self._cut(self._lum(f))
+            return
+        self.mbuf.append(np.asarray(f, float))
+        if sum(len(b) for b in self.mbuf) >= self.MEASURE_S * self.fs:
+            self._lock()
+
+    def _lock(self):
+        """Settle the automatic settings from the first seconds of the picture, then cut it into lines."""
+        f = np.concatenate(self.mbuf) if self.mbuf else np.zeros(0)
+        self.mbuf, self.locked = [], True
+        if not self.from_tone and len(f) > self.fs:      # no start tone heard: black and white from the signal
+            ff = f[np.abs(f - CENTRE) < 700]
+            if len(ff) > self.fs:
+                lo, hi = np.percentile(ff, 3), np.percentile(ff, 97)
+                if 250 < hi - lo < 1100:
+                    self.offset = float(np.clip((lo + hi) / 2 - CENTRE, -250, 250))
+        lum = self._lum(f)
+        if self.auto_lpm and len(lum) >= 4 * self.fs:
+            self.lpm = detect_lpm(lum, self.fs)
+        self._mode_event()
+        self._cut(lum)
+
     def _cut(self, lum):
         self.buf = np.concatenate([self.buf, lum])
-        spl = self.spl
+        spl, width = self.spl, self.width
         while self.pos + spl <= len(self.buf):
             a = self.pos
             seg = self.buf[int(a):int(a + spl)]
-            edges = np.linspace(0, len(seg), WIDTH + 1).astype(int)
+            edges = np.linspace(0, len(seg), width + 1).astype(int)
             row = np.add.reduceat(seg, edges[:-1]) / np.maximum(1, np.diff(edges))
             self.lines.append(row.astype(np.float32))
             self.pos += spl
@@ -264,9 +347,9 @@ class Receiver:
         return np.roll(row, -(self.phase or 0))
 
     def image(self):
-        """The chart so far as an 8-bit array (lines x 1809), phased; phasing lines are left out."""
+        """The chart so far as an 8-bit array (lines x width), phased; phasing lines are left out."""
         if not self.lines:
-            return np.zeros((0, WIDTH), np.uint8)
+            return np.zeros((0, self.width), np.uint8)
         rows = np.array([self._shift(r) for r in self.lines])
         keep = [i for i, r in enumerate(rows) if not _is_phasing(r)]
         if keep:
@@ -276,25 +359,62 @@ class Receiver:
     def _save(self):
         img = self.image()
         self.state = "idle"
-        self.hits = {"start": 0, "stop": 0}
+        self.hits = {"start": 0, "start288": 0, "stop": 0}
         if len(img) < 20:
             self.on_event({"type": "discarded", "lines": len(img)})
             return None
         os.makedirs(self.outdir, exist_ok=True)
         stamp = getattr(self, "t_start", _dt.datetime.now(_dt.timezone.utc)).strftime("%Y%m%d_%H%M")
-        path = os.path.join(self.outdir, f"{self.label}_{stamp}Z.png")
+        path = os.path.join(self.outdir, f"{self.label}_{stamp}Z_{self.lpm}lpm.png")
         save_png(path, img)
         self.saved.append(path)
         self.on_event({"type": "saved", "path": path, "lines": len(img)})
         return path
 
 
+def tone_offset(x, fs=FS):
+    """Tuning error from a start tone: its spectrum is symmetric about the fax centre (1900 Hz when tuned
+    right), so the centroid of the audio power above the noise floor, 1100-2700 Hz, is the centre."""
+    x = np.asarray(x, float)
+    if len(x) < fs // 2:
+        return None
+    p = np.abs(np.fft.rfft(x * np.hanning(len(x)))) ** 2
+    fr = np.fft.rfftfreq(len(x), 1 / fs)
+    m = (fr > 1100) & (fr < 2700)
+    q = np.clip(p[m] - np.median(p[m]) * 1.5, 0, None)
+    if q.sum() <= 0:
+        return None
+    return float(np.clip((fr[m] * q).sum() / q.sum() - CENTRE, -250, 250))
+
+
+def detect_lpm(lum, fs=FS):
+    """Lines a minute: the shortest standard line period at which the picture repeats best. A chart (and
+    above all its phasing lines) looks almost the same one line later; at 120 LPM it also repeats after two
+    lines, so the shortest strong period wins."""
+    v = np.asarray(lum, float)[::12]                # 1 kHz is plenty for line structure
+    v = v - v.mean()
+    rate = fs / 12
+    den = np.dot(v, v) + 1e-12
+    score = {}
+    for lpm in LPM_CHOICES:
+        lag = int(round(rate * 60.0 / lpm))
+        if lag >= len(v) // 2:
+            continue
+        lo, hi = max(1, lag - 3), lag + 4               # small search for sound-card clock error
+        score[lpm] = max(np.dot(v[:-k], v[k:]) / den for k in range(lo, hi))
+    if not score:
+        return LPM
+    best = max(score.values())
+    return max(l for l, sc in score.items() if sc >= 0.85 * best)   # highest LPM = shortest period
+
+
 def find_phase(lines):
     """Column where the phasing pulse sits: the column that differs most from the rest of the line, on
     average over the phasing lines (works for a black pulse on white or a white pulse on black)."""
     a = np.array(lines, float)
+    WIDTH = a.shape[1]
     dev = np.abs(a - np.median(a, axis=1, keepdims=True)).mean(axis=0)
-    k = 31                                          # pulse is about 90 px wide: smooth to find it
+    k = max(5, int(31 * WIDTH / 1810) | 1)           # pulse is 5 % of a line: smooth to find it
     ext = np.concatenate([dev[-k:], dev, dev[:k]])
     sm = np.convolve(ext, np.ones(k) / k, mode="same")[k:-k]
     c = int(np.argmax(sm))

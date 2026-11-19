@@ -101,11 +101,12 @@ class FrequencyWindow(tk.Toplevel):
 # ===================================================================== weather fax
 class WefaxWindow(tk.Toplevel):
     """HF weather fax: pick a station (or your own frequency), tune by CAT, and charts build up line by line.
-    Each chart is saved as a PNG when its stop tone arrives."""
+    Each chart is saved as a PNG when its stop tone arrives. LPM, IOC and the tuning error are found
+    automatically unless you choose them."""
 
     VIEW_W = 905                       # half the 1809-pixel line
 
-    def __init__(self, app):
+    def __init__(self, app, dial_mhz=None, start=False):
         super().__init__(app)
         from . import wefax
         self.app, self.wefax = app, wefax
@@ -153,6 +154,17 @@ class WefaxWindow(tk.Toplevel):
         self.v_ppm = tk.StringVar(value=str(G.load_cfg().get("wefax", {}).get("ppm", 0)))
         sp = ttk.Spinbox(ctl, from_=-500, to=500, increment=5, textvariable=self.v_ppm, width=6)
         sp.pack(side="left")
+        ttk.Label(ctl, text="LPM").pack(side="left", padx=(12, 4))
+        self.v_lpm = tk.StringVar(value="Auto")
+        ttk.Combobox(ctl, textvariable=self.v_lpm, values=["Auto", "60", "90", "100", "120", "180", "240"],
+                     state="readonly", width=5).pack(side="left")
+        ttk.Label(ctl, text="IOC").pack(side="left", padx=(8, 4))
+        self.v_ioc = tk.StringVar(value="Auto")
+        ic = ttk.Combobox(ctl, textvariable=self.v_ioc, values=["Auto", "576", "288"], state="readonly", width=5)
+        ic.pack(side="left")
+        G.Tooltip(ic, "Auto: IOC from the start tone (300 Hz = 576, 675 Hz = 288), LPM from how the picture "
+                      "repeats line to line, and the radio's tuning error from the start tone (black and white "
+                      "are moved to match). Choose a value only if Auto gets it wrong.")
         G.Tooltip(sp, "If charts come out slanted, your sound card clock is off. Lines leaning to the right: "
                       "make this more negative; leaning left: more positive. Typical values are -100 to +100.")
         self.status = tk.Label(self, text="Choose a station, then press Tune and receive.", bg=G.C["bg"],
@@ -161,17 +173,24 @@ class WefaxWindow(tk.Toplevel):
         self.cv = tk.Canvas(self, bg="#ffffff", highlightthickness=0, width=self.VIEW_W, height=560)
         self.cv.pack(padx=10, pady=(0, 10), anchor="w")
         self.img_item = self.cv.create_image(0, 0, anchor="nw")
+        self.dial_preset = dial_mhz
         self.load_stations()
         self.protocol("WM_DELETE_WINDOW", self.close)
         self.after(500, self.tick)
+        if start:
+            self.after(300, self.start)
 
     def load_stations(self):
         self.stations = list(self.wefax.STATIONS)
         for i in userfreqs.load(G.CONFIG):
             if i["mode"] == "wefax":
                 self.stations.insert(0, ("My frequency", "MINE", float(i["mhz"]) * 1000, i.get("note") or "added by you"))
+        if getattr(self, "dial_preset", None):      # from Signal ID: whatever the radio is tuned to now
+            self.stations.insert(0, ("Radio dial", "DIAL", round(self.dial_preset * 1000 + 1.9, 1), "from Signal ID"))
         self.cb.config(values=[self.wefax.station_label(s) for s in self.stations])
-        if not self.v_st.get():
+        if getattr(self, "dial_preset", None):
+            self.cb.current(0)
+        elif not self.v_st.get():
             want = G.load_cfg().get("wefax", {}).get("station", "NMG")
             from .bandadvisor import sun_elevation
             st = G.load_cfg().get("station", {})
@@ -212,8 +231,10 @@ class WefaxWindow(tk.Toplevel):
                 self.q.put(("note", f"Could not tune the radio ({e}); set USB {dial:.4f} MHz by hand."))
         threading.Thread(target=go, daemon=True).start()
         self.rows = []
+        lpm = None if self.v_lpm.get() == "Auto" else int(self.v_lpm.get())
+        ioc = None if self.v_ioc.get() == "Auto" else int(self.v_ioc.get())
         self.rx = self.wefax.Receiver(ppm=ppm, outdir=user_dir("wefax"), label=f"{st[1]}_{st[2]:.0f}kHz",
-                                      on_line=self.rows.append, on_event=self._event)
+                                      on_line=self.rows.append, on_event=self._event, lpm=lpm, ioc=ioc)
         from .tuning import AudioIn
         dev = cfg.get("receive", {}).get("audio_device", "default")
         self.audio = AudioIn(dev, self.rx.feed)
@@ -269,7 +290,12 @@ class WefaxWindow(tk.Toplevel):
                 if kind == "note":
                     self.app.print(e + "\n")
                 elif e["type"] == "start_tone":
-                    self.status.config(text="Start tone heard · phasing...", fg=G.C["decode"])
+                    self.status.config(text=f"Start tone heard · IOC {e.get('ioc', 576)} · tuning "
+                                            f"{e.get('offset_hz', 0):+d} Hz corrected · phasing...", fg=G.C["decode"])
+                elif e["type"] == "mode":
+                    self.mode_txt = (f"{e['lpm']} LPM · IOC {e['ioc']} · tuning {e['offset_hz']:+d} Hz"
+                                     + (" (auto)" if e.get("auto") else ""))
+                    self.app.print(f"Weather fax: {self.mode_txt}\n")
                 elif e["type"] == "start":
                     self.status.config(text="Receiving a chart...", fg=G.C["decode"])
                 elif e["type"] == "saved":
@@ -284,8 +310,9 @@ class WefaxWindow(tk.Toplevel):
         if self.rx and self.v_auto.get():
             self._autopilot()
         if self.rx and self.rx.state == "image":
-            self.status.config(text=f"Receiving a chart · {len(self.rx.lines)} lines "
-                                    f"({len(self.rx.lines) / 120:.1f} min)", fg=G.C["decode"])
+            self.status.config(text=(getattr(self, "mode_txt", "measuring LPM") + " · ") +
+                                    f"Receiving a chart · {len(self.rx.lines)} lines "
+                                    f"({len(self.rx.lines) / self.rx.lpm:.1f} min)", fg=G.C["decode"])
         self.draw()
         self.after(1000, self.tick)
 
@@ -324,8 +351,11 @@ class WefaxWindow(tk.Toplevel):
         if not self.rows:
             return
         h = int(self.cv.cget("height"))
-        rows = np.roll(np.array(self.rows[-2 * h:]), -int((self.rx.phase if self.rx else 0) or 0), axis=1)
-        img = (np.clip(rows[:, ::2][:, :self.VIEW_W], 0, 1) * 255).astype(np.uint8)
+        recent = self.rows[-2 * h:]
+        recent = [r for r in recent if len(r) == len(recent[-1])]
+        rows = np.roll(np.array(recent), -int((self.rx.phase if self.rx else 0) or 0), axis=1)
+        cols = np.linspace(0, rows.shape[1] - 1, self.VIEW_W).astype(int)    # any IOC fills the view
+        img = (np.clip(rows[:, cols], 0, 1) * 255).astype(np.uint8)
         img = img[::2] if len(img) > h else img                 # two lines per screen row when full
         rgb = np.repeat(img[:, :, None], 3, axis=2)
         ppm = b"P6 %d %d 255\n" % (rgb.shape[1], rgb.shape[0]) + rgb.tobytes()
@@ -597,6 +627,13 @@ class SignalIdWindow(tk.Toplevel):
                      "mains hum, charger noise and clicks.")
         self.v_keep = tk.BooleanVar(value=False)
         ttk.Checkbutton(row, text="Keep identifying", variable=self.v_keep).pack(side="left", padx=10)
+        self.v_autoset = tk.BooleanVar(value=True)
+        au = ttk.Checkbutton(row, text="Auto-set decoder", variable=self.v_autoset)
+        au.pack(side="left", padx=(0, 10))
+        G.Tooltip(au, "When Signal ID is sure (75% or more), Uranus sets itself up to decode it: the right WSJT-X "
+                      "mode and dial, Pumpkin / UR, or the Weather fax window on this dial with LPM, IOC and tuning "
+                      "found automatically. Signals Uranus has no decoder for (RTTY, NAVTEX, ALE, CW, voice) are "
+                      "named only.")
         self.b_more = ttk.Button(row, text="Read more", command=self.read_more)
         self.b_more.pack(side="left")
         self.b_go = ttk.Button(row, text="", command=self.go_action)
@@ -696,8 +733,14 @@ class SignalIdWindow(tk.Toplevel):
         self.status.config(text=(f"Most likely: {head.name} ({head.confidence:.0%})" if head else
                                  "Nothing recognised"), fg=G.C["green"] if sig else G.C["amber"])
         act = {"WEFAX": "Open Weather fax"}.get(head.name if head else "")
-        if head and head.name in ("FT8", "FT4", "WSPR", "Q65", "JT65"):
+        if head and head.name in ("FT8", "FT4", "WSPR", "Q65", "JT65", "JT9", "FST4", "FST4W"):
             act = f"Decode {head.name}"
+        if head and head.name.startswith(("PUMPKIN", "UR-")):
+            act = f"Decode {head.name}"
+        nodec = {"RTTY": "fldigi (RTTY)", "SITOR-B / NAVTEX": "fldigi or YaND (NAVTEX)", "ALE": "PC-ALE / MARS-ALE",
+                 "CW": "fldigi or CW Skimmer", "PSK31": "fldigi"}
+        if head and head.name in nodec:
+            self.txt.insert("end", f"Uranus has no {head.name} decoder; to read it, use {nodec[head.name]}.\n", "ctx")
         if act:
             self.b_go.config(text=act)
             self.b_go.pack(side="left", padx=6, in_=self.b_more.master)
@@ -706,6 +749,10 @@ class SignalIdWindow(tk.Toplevel):
             self.b_go.pack_forget()
         if head:
             self.app.add_ticker(f"SIGNAL ID: {head.name} ({head.confidence:.0%})", log=False)
+        if act and head and head.confidence >= 0.75 and self.v_autoset.get() and act != getattr(self, "applied", ""):
+            self.applied = act                       # once per signal, not on every Keep identifying pass
+            self.app.print(f"Signal ID auto-set: {act} on {dial:.4f} MHz\n")
+            self.go_action()
 
     def read_more(self):
         if self.top and self.top.link:
@@ -716,8 +763,10 @@ class SignalIdWindow(tk.Toplevel):
     def go_action(self):
         act, name = getattr(self, "act", ("", ""))
         if name == "WEFAX":
-            WefaxWindow(self.app)
+            WefaxWindow(self.app, dial_mhz=float(self.v_dial.get().replace(",", ".") or 0) or None, start=True)
         elif act.startswith("Decode"):
+            if self.app.worker:
+                self.app.print("Signal ID: press Stop, then Listen + decode, to switch the decoder.\n")
             self.app.v_sub.set(name)
             self.app.v_dial.set(self.v_dial.get())
             self.app.save_listen(mode_changed=False)

@@ -478,17 +478,26 @@ class App(tk.Tk):
         for col in (C["blue"], C["red"], C["green"]):
             tk.Frame(band, bg=col, height=4).pack(side="left", fill="x", expand=True)
         s = tk.Frame(self, bg=C["panel"])
-        s.pack(fill="x", padx=18, pady=(4, 10))
+        s.pack(fill="x", padx=18, pady=(4, 0))
+        # always-visible activity bar: purple listening, amber decoding, red transmitting (mirrors the decoder bar)
+        self.top_bar = tk.Canvas(self, height=7, bg=C["panel2"], highlightthickness=0)
+        self.top_bar.pack(fill="x", padx=18, pady=(0, 10))
+        self.top_fill = self.top_bar.create_rectangle(0, 0, 0, 7, fill=C["purple"], width=0)
+        Tooltip(self.top_bar, "Purple: listening (recording the slot) · Amber: decoding · Red: transmitting")
         self.lamp = tk.Canvas(s, width=22, height=22, bg=C["panel"], highlightthickness=0)
         self.lamp.pack(side="left", padx=(14, 6), pady=10)
         self.lamp_dot = self.lamp.create_oval(3, 3, 19, 19, fill=C["muted"], outline="")
-        self.state_lbl = tk.Label(s, text="STANDBY", bg=C["panel"], fg=C["ink"], font=(UI, 12, "bold"), width=11,
+        self.state_lbl = tk.Label(s, text="STANDBY", bg=C["panel"], fg=C["ink"], font=(UI, 12, "bold"), width=14,
                                   anchor="w")
         self.state_lbl.pack(side="left")
         self.status = tk.Label(s, text="", bg=C["panel"], fg=C["muted"], font=(UI, 10), anchor="w")
         self.status.pack(side="left", fill="x", expand=True)
+        lg = ttk.Button(s, text="Log", width=5, command=self.show_log)
+        lg.pack(side="right", padx=(4, 12))
+        Tooltip(lg, "Everything Uranus has printed: decodes, radio messages and errors. Useful on small screens "
+                    "where the log at the bottom is out of sight.")
         go = ttk.Button(s, text="Go", width=4, command=lambda: self.run_command(self.v_cmd.get()))
-        go.pack(side="right", padx=(4, 12))
+        go.pack(side="right", padx=(4, 0))
         self.v_cmd = tk.StringVar()
         ce = ttk.Entry(s, textvariable=self.v_cmd, width=34)
         ce.pack(side="right")
@@ -913,6 +922,23 @@ class App(tk.Tk):
         return f"Slot {hhmm}: no decode · audio {lv:.0f} dBFS{hint}"
 
     def update_decoder(self):
+        try:
+            self._update_decoder()
+        finally:
+            self._mirror_bar()
+
+    def _mirror_bar(self):
+        """Copy the decoder's slot bar to the bar under the status strip (visible on any screen)."""
+        try:
+            x0, y0, x1, y1 = self.dec_bar.coords(self.dec_fill)
+            w = max(1, self.dec_bar.winfo_width())
+            W = max(1, self.top_bar.winfo_width())
+            self.top_bar.coords(self.top_fill, 0, 0, x1 / w * W, 7)
+            self.top_bar.itemconfig(self.top_fill, fill=self.dec_bar.itemcget(self.dec_fill, "fill"))
+        except (tk.TclError, ValueError, AttributeError):
+            pass
+
+    def _update_decoder(self):
         e, now = self.dec, time.time()
         w = max(1, self.dec_bar.winfo_width())
         sub = e.get("submode", self.v_sub.get())
@@ -1082,7 +1108,8 @@ class App(tk.Tk):
 
     def toggle_wf_size(self):
         self.wf_big = not self.wf_big
-        self.WF_H = 320 if self.wf_big else 160
+        room = self.winfo_height() - 600 if self.winfo_height() > 1 else 320
+        self.WF_H = max(180, min(320, room)) if self.wf_big else 160   # keep the decoder bar in sight
         self.wf_size_btn.config(text="Smaller" if self.wf_big else "Bigger")
         self._wf_layout()
         self._draw_tags()
@@ -1307,6 +1334,25 @@ class App(tk.Tk):
     def print(self, s):
         self.text.insert("end", s)
         self.text.see("end")
+        lw = getattr(self, "log_win", None)
+        if lw is not None:
+            try:
+                lw.insert("end", s)
+                lw.see("end")
+            except tk.TclError:
+                self.log_win = None
+
+    def show_log(self):
+        """The console in its own window (always reachable, whatever the screen size)."""
+        w = tk.Toplevel(self)
+        w.title("Uranus - Log")
+        w.geometry("900x520")
+        t = tk.Text(w, bg=C["dark"], fg="#b8f28a", font=(MONO, 10), wrap="word")
+        t.pack(fill="both", expand=True)
+        t.insert("end", self.text.get("1.0", "end"))
+        t.see("end")
+        self.log_win = t
+        w.protocol("WM_DELETE_WINDOW", lambda: (setattr(self, "log_win", None), w.destroy()))
 
     def set_state(self, state, msg=None):
         self.state = state
@@ -1337,7 +1383,15 @@ class App(tk.Tk):
                 self.reporter.stop.set()
                 threading.Thread(target=self.reporter.flush, daemon=True).start()
             self.dec = {"type": "idle"}
-            self.set_state("idle", "Finished.")
+            err = getattr(self, "worker_error", "")
+            if err:
+                self.set_state("idle", "Stopped with an error: " + err[:120])
+                self.status.config(fg=C["red"])
+                messagebox.showerror("Uranus", f"That stopped with an error:\n\n{err}\n\nThe full log is under "
+                                               "Log (top right).", parent=self)
+            else:
+                self.status.config(fg=C["muted"])
+                self.set_state("idle", "Finished.")
         self.handle_events_extra()
         self._tick += 1
         if self._tick % 3 == 0:
@@ -1398,8 +1452,12 @@ class App(tk.Tk):
                 except SystemExit as e:
                     if e.code not in (None, 0):
                         print(f"\n{e.code}\n")
+                        self.worker_error = str(e.code)
                 except Exception as e:      # noqa: BLE001
                     print(f"\nERROR: {e}\n")
+                    self.worker_error = str(e)
+        self.worker_error = ""
+        self.worker_started = time.time()
         self.worker = threading.Thread(target=wrap, daemon=True)
         self.worker.start()
 
@@ -1563,6 +1621,8 @@ class App(tk.Tk):
 
     def on_air(self):
         from . import scheduler, timetable
+        if self.busy():
+            return
         try:
             cfg, slots = scheduler.load_config(CONFIG)
         except Exception as e:              # noqa: BLE001
@@ -1584,11 +1644,18 @@ class App(tk.Tk):
                 "3. Click Save. (To rehearse without keying: Demos and tools → Show plan / Dry run.)\n"
                 "4. Click ON AIR.", parent=self)
             return
+        backend = cfg.get("radio", {}).get("backend", "dry-run")
+        if backend == "dry-run" and not messagebox.askyesno(
+                "Dry run - the radio will NOT transmit",
+                "'Transmit with' is set to dry-run, so ON AIR only writes audio files and never keys the radio."
+                "\n\nTo transmit, open the Setup wizard (or Station setup) and choose your radio, for example "
+                "the Icom IC-9100.\n\nContinue the dry run anyway?", parent=self):
+            return
         if not messagebox.askyesno(
                 "Transmit?", "Start transmitting with your settings?\n\n"
                 f"{timetable.describe(sc)}.\n\n"
                 "Uranus connects to the radio by itself. Check: the radio is on and plugged in, "
-                "PC clock accurate, and every enabled frequency permitted by your licence."):
+                "PC clock accurate, and every enabled frequency permitted by your licence.", parent=self):
             return
 
         if self.v_psk.get() and not self.reporter:
