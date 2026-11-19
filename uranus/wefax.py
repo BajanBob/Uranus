@@ -67,6 +67,32 @@ STATIONS = [
 ]
 
 
+def frequencies(call):
+    return sorted(st[2] for st in STATIONS if st[1] == call)
+
+
+def pick(call, daytime):
+    """Autopilot frequency: by day the highest 10-22 MHz channel, at night the lowest 3-10 MHz one
+    (falling back to the nearest the station has)."""
+    fs = frequencies(call)
+    if not fs:
+        return None
+    if daytime:
+        day = [f for f in fs if 10000 <= f <= 22000]
+        return max(day) if day else max(fs)
+    night = [f for f in fs if 3000 <= f <= 10000]
+    return min(night) if night else min(fs)
+
+
+def next_frequency(call, current_khz):
+    """The station's next channel after this one (wraps), for hopping when nothing is heard."""
+    fs = frequencies(call)
+    if not fs:
+        return None
+    later = [f for f in fs if f > current_khz + 0.05]
+    return later[0] if later else fs[0]
+
+
 def dial_mhz(assigned_khz):
     """USB dial for an assigned (published) WEFAX frequency."""
     return round((assigned_khz - OFFSET_KHZ) / 1000.0, 6)

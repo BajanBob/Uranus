@@ -21,6 +21,7 @@ import time
 from . import geo, propagation, spots
 
 CONTACTS = os.path.join(os.path.dirname(spots.DEFAULT_PATH), "contacts.jsonl")
+PATHS = os.path.join(os.path.dirname(spots.DEFAULT_PATH), "paths.jsonl")   # overheard ping paths (network map)
 _CALL = r"[A-Z0-9/]{3,7}"
 _PING = re.compile(rf"^PING ({_CALL})$")
 _R = re.compile(rf"^(RR?)([+-]\d\d)({_CALL})$")
@@ -85,6 +86,19 @@ def load(path=CONTACTS):
     return out
 
 
+def network(path=PATHS, since_s=7 * 86400, now=None):
+    """Latest overheard path for each pair of stations, both grids known: [{a, a_grid, b, b_grid, snr, time}]"""
+    now = now or time.time()
+    best = {}
+    for p in load(path):
+        if now - p.get("time", 0) > since_s or not (p.get("heard_grid") and p.get("by_grid")):
+            continue
+        k = tuple(sorted((p["heard"], p["by"])))
+        if p["time"] >= best.get(k, {}).get("time", 0):
+            best[k] = p
+    return list(best.values())
+
+
 def two_way(path=CONTACTS):
     """call -> latest two-way contact (for the smashed pumpkins on the map)."""
     best = {}
@@ -104,6 +118,7 @@ class PingAgent:
         self.freq_hz, self.submode = freq_hz, submode
         self.on_event = on_event or (lambda e: None)
         self.path = path
+        self.paths_path = os.path.join(os.path.dirname(path) or ".", "paths.jsonl")
         self.auto_reply = auto_reply
         self.grids = {}                         # call -> grid from ID frames
         self.pinged = {}                        # call -> time we pinged them
@@ -128,7 +143,10 @@ class PingAgent:
             return
         kind, to, snr = p
         sender = ev.get("from", "?")
-        if to != self.call or sender in ("?", self.call):
+        if sender in ("?", self.call):
+            return
+        if to != self.call:
+            self._overheard(kind, sender, to, snr, now)
             return
         my_snr = ev.get("snr")
         if kind == "ping":
@@ -148,6 +166,20 @@ class PingAgent:
             self._contact(sender, snr, my_snr, now)
         elif kind == "final":
             self._contact(sender, snr, self.heard.get(sender, my_snr), now)
+
+    def _overheard(self, kind, sender, to, snr, now):
+        """Uranus network: a ping exchange between two other stations tells us that path is open."""
+        if kind == "ping":
+            return
+        p = {"time": now, "heard": to, "heard_grid": self.grids.get(to, ""), "by": sender,
+             "by_grid": self.grids.get(sender, ""), "snr": snr, "freq_hz": self.freq_hz, "submode": self.submode}
+        try:
+            os.makedirs(os.path.dirname(self.paths_path) or ".", exist_ok=True)
+            with open(self.paths_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(p) + "\n")
+        except OSError:
+            pass
+        self.on_event({"type": "path", "path": p, "text": f"Network: {sender} hears {to} at {snr:+d} dB"})
 
     def _contact(self, call, they_heard_me, i_heard_them, now):
         if now - self.done.get(call, 0) < 60:

@@ -200,6 +200,31 @@ C = {                            # v0.16 faceplate: deep blue, with blue / red /
     "purple": "#b07cff",                                         # LISTENING (lamp and slot bar)
     "decode": "#ff9f1a",                                         # DECODING: amber (slot bar and heading)
 }
+PALETTES = {                     # Accessibility > Faceplate colours
+    "uranus": {},
+    "tradewind": {"bg": "#16191c", "panel": "#202428", "panel2": "#2b3036", "rule": "#3a4148", "ink": "#e6edf3",
+                  "muted": "#9aa4ae", "orange": "#0e7c86", "pink": "#0e7c86", "pink_hi": "#14a3a8",
+                  "amber": "#ffb547", "dark": "#0d0f11", "decode": "#ffb547", "green": "#45f08a"},
+    "highcontrast": {"bg": "#000000", "panel": "#0b0b0b", "panel2": "#1c1c1c", "rule": "#ffffff", "ink": "#ffffff",
+                     "muted": "#dddddd", "orange": "#0050b3", "pink": "#0050b3", "pink_hi": "#1f73d9",
+                     "amber": "#ffd400", "dark": "#000000", "decode": "#ffd400", "red": "#ff5a5a"},
+}
+COLOURBLIND = {"green": "#56b4e9", "red": "#ff7a1a", "decode": "#f0e442", "amber": "#f0e442"}   # Okabe-Ito
+
+
+def _access_palette():
+    """Faceplate colours and colour-blind-safe swaps from [access] in uranus.toml, before any widget exists."""
+    try:
+        acc = load_cfg().get("access", {})
+    except Exception:                            # noqa: BLE001 - first run: no settings yet
+        return {}
+    C.update(PALETTES.get(acc.get("theme", "uranus"), {}))
+    if acc.get("colourblind"):
+        C.update(COLOURBLIND)
+    return acc
+
+
+ACCESS = _access_palette()
 UI = "Segoe UI" if os.name == "nt" else "DejaVu Sans"
 MONO = "Consolas" if os.name == "nt" else "DejaVu Sans Mono"
 
@@ -245,7 +270,7 @@ def apply_theme(root):
     for name, base in (("Side", "TButton"), ("SideAccent", "Accent.TButton"), ("SideDanger", "Danger.TButton"),
                        ("SideInfo", "Info.TButton"), ("SideGo", "Go.TButton")):
         st.configure(f"{name}.TButton", **{k: st.lookup(base, k) for k in ("background", "foreground", "font")
-                                          if st.lookup(base, k)}, padding=(12, 5), anchor="w")
+                                          if st.lookup(base, k)}, padding=(12, 3), anchor="w")
         st.map(f"{name}.TButton", background=st.map(base, "background"), foreground=st.map(base, "foreground"))
     st.configure("Side.TButton", background=C["pink"], foreground="#ffffff", font=(UI, 10, "bold"))
     st.map("Side.TButton", background=[("pressed", C["pink_hi"]), ("active", C["pink_hi"])],
@@ -343,6 +368,13 @@ class App(tk.Tk):
                 self.state("zoomed")         # small or scaled screens: use the whole screen
             except tk.TclError:
                 pass
+        if ACCESS.get("large_text"):
+            try:
+                self.tk.call("tk", "scaling", float(self.tk.call("tk", "scaling")) * 1.25)
+            except tk.TclError:
+                pass
+        from . import speech
+        speech.ENABLED = bool(ACCESS.get("speak"))
         apply_theme(self)
         self.q = queue.Queue()
         self.runner = None
@@ -447,6 +479,25 @@ class App(tk.Tk):
         self.state_lbl.pack(side="left")
         self.status = tk.Label(s, text="", bg=C["panel"], fg=C["muted"], font=(UI, 10), anchor="w")
         self.status.pack(side="left", fill="x", expand=True)
+        go = ttk.Button(s, text="Go", width=4, command=lambda: self.run_command(self.v_cmd.get()))
+        go.pack(side="right", padx=(4, 12))
+        self.v_cmd = tk.StringVar()
+        ce = ttk.Entry(s, textvariable=self.v_cmd, width=34)
+        ce.pack(side="right")
+        ce.bind("<Return>", lambda e: self.run_command(self.v_cmd.get()))
+        ce.insert(0, "Tell Uranus what to do...")
+        ce.bind("<FocusIn>", lambda e: ce.get().startswith("Tell Uranus") and ce.delete(0, "end"))
+        Tooltip(ce, "Type what you want, in plain English. For example:\n  listen on 2 m tonight and wake me for "
+                    "an opening\n  weather fax from New Orleans\n  scan 20 m and 40 m for ft8\n  which band is best?"
+                    "\n  what is this?\n  hurricane watch\n  check the station · find the noise · speak on · stop")
+        from .profiles import current as _cur
+        try:
+            m = _cur(load_cfg())
+        except Exception:                    # noqa: BLE001
+            m = None
+        self.mission_lbl = tk.Label(s, text=f"MISSION · {m.name.upper()}" if m else "", bg=C["panel"],
+                                    fg=C["amber"], font=(UI, 10, "bold"))
+        self.mission_lbl.pack(side="right", padx=12)
         Tooltip(self.lamp, "Grey: standby · Amber: working, dry run or waiting to transmit · Red: transmitting · "
                            "Lilac: listening")
 
@@ -460,10 +511,10 @@ class App(tk.Tk):
                 ("Station setup", self.setup, None, "All radio, audio, CAT and band settings on one page."),
                 ("Bands and modes", self.bands_modes, None, "Switch whole bands, and each mode and frequency "
                  "(APRS, FT8, WSPR, Pumpkin, Cucumber, UR), on or off for the beacon."),
+                ("Mission", self.mission, None, "One click sets Uranus up for a job: Hurricane watch, Field day, "
+                 "Maritime, DX hunt, Overnight beacon or 2 m propagation watch."),
                 ("Test radio", self.test_radio, "Go", "Connect to the radio and read its frequency. Uranus "
                  "starts its built-in Hamlib by itself: no install and no model number needed."),
-                ("Edit settings file", self.edit_config, None, "Open uranus.toml in a text editor for "
-                 "everything else (timing, APRS details, frequencies)."),
             ]),
             ("OPERATE", [
                 ("Timetable", self.timetable, None, "Clock times for transmitting (every N minutes) and for "
@@ -488,9 +539,11 @@ class App(tk.Tk):
                  "ALE, voice, mains hum, charger noise."),
                 ("Weather fax", self.weather_fax, None, "Receive HF weather charts (WEFAX) from New Orleans, "
                  "Boston and other stations; tunes the radio and saves each chart as a picture."),
+                ("Best band now", self.best_band, None, "Which band and mode to use now, from what you hear, who "
+                 "hears you and the sun."),
                 ("Screenshot + share", self.share, None, "Save a picture of this screen, and share Uranus "
                  "(free to share) by WhatsApp or email."),
-                ("Demos and tools...", self.demos_menu, None, "Show plan, dry run, Pumpkin and Cucumber decoding "
+                ("More tools...", self.demos_menu, None, "Show plan, dry run, Pumpkin and Cucumber decoding "
                  "demos, the map demo, link budget and the output folder."),
             ]),
         ]
@@ -1022,6 +1075,12 @@ class App(tk.Tk):
         return txt + time.strftime("  %H:%MZ", time.gmtime())
 
     def on_decode(self, sp):
+        if sp.get("call") and sp["call"] not in self.heard_calls:
+            from . import speech
+            if getattr(self, "alert_new", False):
+                self.flash()
+                self.bell()
+            speech.say(f"New station {speech.spoken_call(sp['call'])}, {sp['mode']}")
         try:
             dial = (self.dec.get("dial_hz") or float(self.v_dial.get().split()[0]) * 1e6)
             off = float(sp.get("freq_hz") or 0) - dial
@@ -1536,6 +1595,111 @@ class App(tk.Tk):
         self.print(f"\n> listen: decoding from the radio{up}; spots go to out/spots.jsonl\n")
         self.start(go, f"Decoding every slot{up}. Press Stop to end.", "listen")
 
+    def mission(self, key=None):
+        from .gui_tools import MissionWindow
+        MissionWindow(self, key)
+
+    def best_band(self):
+        from .gui_tools import BestBandWindow
+        BestBandWindow(self)
+
+    def health_check(self):
+        from .gui_tools import HealthWindow
+        HealthWindow(self)
+
+    def doctor(self):
+        from .gui_tools import DoctorWindow
+        DoctorWindow(self)
+
+    def access(self):
+        from .gui_tools import AccessWindow
+        AccessWindow(self)
+
+    def fax_gallery(self):
+        from .gui_tools import FaxGallery
+        FaxGallery(self)
+
+    def run_command(self, text):
+        """Plain-English command bar."""
+        from . import commands, speech
+        from . import gui_tools as T
+        if not text.strip() or text.startswith("Tell Uranus"):
+            return
+        try:
+            dial = float(self.v_dial.get().split()[0])
+        except (ValueError, IndexError):
+            dial = None
+        plan = commands.parse(text, dial)
+        self.print(f"\n> {text}\n{plan.text}\n")
+        speech.say(plan.text)
+        self.v_cmd.set("")
+        for a in plan.actions:
+            try:
+                self._do(a, T)
+            except Exception as e:           # noqa: BLE001
+                self.print(f"Could not {a['do']}: {e}\n")
+
+    def _do(self, a, T):
+        do = a["do"]
+        if do == "stop":
+            self.stop()
+        elif do == "mission":
+            T.apply_mission(self, a["key"])
+        elif do == "signal_id":
+            w = T.SignalIdWindow(self)
+            if a.get("dial_mhz"):
+                w.v_dial.set(str(a["dial_mhz"]))
+            w.identify()
+        elif do == "best":
+            self.best_band()
+        elif do == "health":
+            self.health_check()
+        elif do == "doctor":
+            self.doctor()
+        elif do == "map":
+            self.station_map()
+        elif do == "wefax":
+            if a.get("call"):
+                write_keys({("wefax", "station"): a["call"], ("wefax", "autopilot"): True})
+            T.WefaxWindow(self)
+        elif do == "scan":
+            write_keys({("scanner", "bands"): a["bands"], ("scanner", "modes"): a["modes"]})
+            T.ScannerWindow(self)
+        elif do == "ping":
+            c = ChatWindow(self)
+            c.v_ping.set(a["call"])
+            c.say(f"Press Start, then Ping to send PING {a['call']}.\n", "info")
+        elif do == "listen":
+            if a.get("dial_mhz"):
+                self.v_dial.set(str(a["dial_mhz"]))
+            self.v_sub.set(a.get("submode") or "AUTO")
+            self.save_listen(mode_changed=False)
+            if a.get("window"):
+                self._timetable_window(f"{a['window']} listen")
+            elif not self.worker:
+                self.listen()
+        elif do == "beacon":
+            self._timetable_window(f"{a['window']} transmit {a['every']}")
+            self.print("Timetable set. Press ON AIR to start (it asks first).\n")
+        elif do == "alert":
+            self.alert_new = True
+        elif do == "access":
+            from . import speech
+            keys = {("access", k): v for k, v in a.items() if k != "do"}
+            write_keys(keys)
+            if "speak" in a:
+                speech.ENABLED = a["speak"]
+
+    def _timetable_window(self, win):
+        """Add (or replace one at the same times) a timetable window and switch the timetable on."""
+        from . import timetable
+        cfg = load_cfg().get("timetable", {})
+        wins = [w for w in cfg.get("windows", []) if not w.startswith(win.split()[0])]
+        timetable.parse(win)                 # raises on a bad window before anything is saved
+        wins.insert(0, win)                  # first match wins: the new window takes priority
+        err = write_keys({("timetable", "enabled"): True, ("timetable", "windows"): wins})
+        self.print((err or f"Timetable: {'; '.join(wins)}") + "\n")
+
     def scanner(self):
         from .gui_tools import ScannerWindow
         ScannerWindow(self)
@@ -1586,6 +1750,11 @@ class App(tk.Tk):
         m = tk.Menu(self, tearoff=0, bg=C["panel2"], fg="#ffffff", activebackground=C["pink"],
                     activeforeground="#ffffff", font=(UI, 10))
         for label, cmd in [
+                ("Station health check", self.health_check),
+                ("Interference doctor (find the noise)", self.doctor),
+                ("Accessibility and faceplate colours", self.access),
+                ("Weather fax gallery", self.fax_gallery),
+                ("Edit settings file", self.edit_config),
                 ("Show plan (next two cycles, nothing sent)", lambda: self.cli(["plan", "--cycles", "2"])),
                 ("Dry run: one cycle, WAV files only", self.dry_run),
                 ("Pumpkin demo: decode 29 dB below the noise",
@@ -2943,6 +3112,9 @@ class ChatWindow(tk.Toplevel):
                     self.say(f"{stamp}  NOT DECODED {e['text']}\n", "info")
                 elif t == "report":
                     self.say(f"{stamp}  {e['text']}\n", "report")
+                    from . import speech
+                    c0 = e.get("contact") or {}
+                    speech.say(f"Pumpkin report from {speech.spoken_call(c0.get('call', ''))}: two way contact")
                     try:
                         c = e.get("contact") or {}
                         self.app.add_ticker(f"PUMPKIN REPORT {c.get('call', '')}: two-way, they hear you "
@@ -2951,6 +3123,8 @@ class ChatWindow(tk.Toplevel):
                                                alert=True)
                     except Exception:            # noqa: BLE001
                         pass
+                elif t == "path":
+                    self.say(f"{stamp}  {e['text']}\n", "info")
                 elif t in ("ping_in", "ping_out"):
                     self.say(f"{stamp}  {e['text']}\n", "report" if t == "ping_in" else "me")
                 else:

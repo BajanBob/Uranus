@@ -1190,6 +1190,121 @@ class TestFaceplateTools(unittest.TestCase):
         m = wsjt._FT8_LINE.match("0001 -18  0.0 1500 `  K1JT K9AN EN50")
         self.assertIsNotNone(m)                                 # FST4 lines use a backtick marker
 
+class TestRoadmapFeatures(unittest.TestCase):
+    def test_mission_profiles_write_valid_settings(self):
+        from uranus import profiles, radios
+        t0 = open("config/uranus.toml", encoding="utf-8").read()
+        for m in profiles.MISSIONS:
+            t = t0
+            for (sec, key), val in profiles.config_changes(m).items():
+                t = radios.set_toml_key(t, sec, key, val)
+            cfg = tomllib.loads(t)
+            self.assertEqual(cfg["mission"]["name"], m.key)
+            self.assertEqual(cfg["receive"]["submode"], m.receive["submode"])
+            from uranus import timetable
+            for w in cfg["timetable"].get("windows", []):
+                timetable.parse(w)                               # every window is a valid timetable line
+            self.assertTrue(m.changes())
+        self.assertEqual(profiles.find("hurricane").key, "hurricane")
+        self.assertEqual(profiles.find("Field day").key, "fieldday")
+        self.assertIsNone(profiles.find("knitting"))
+
+    def test_plain_english_commands(self):
+        from uranus import commands
+        p = commands.parse("listen on 2 m tonight and wake me for an opening", 14.074)
+        self.assertEqual([a["do"] for a in p.actions], ["listen", "alert"])
+        self.assertEqual((p.actions[0]["dial_mhz"], p.actions[0]["window"]), (144.174, "18:00-06:00"))
+        p = commands.parse("beacon wspr every 10 minutes overnight")
+        self.assertEqual(p.actions[0], {"do": "beacon", "every": 10, "window": "22:00-06:00", "mode": "wspr"})
+        self.assertEqual(commands.parse("weather fax from Boston").actions[0]["call"], "NMF")
+        self.assertEqual(commands.parse("scan 20 m and 40 m for jt65").actions[0],
+                         {"do": "scan", "bands": ["20m", "40m"], "modes": ["jt65"]})
+        self.assertEqual(commands.parse("listen for q65 on 144.170 from 7pm to 11pm").actions[0]["window"],
+                         "19:00-23:00")
+        self.assertEqual(commands.parse("hurricane watch").actions[0], {"do": "mission", "key": "hurricane"})
+        self.assertEqual(commands.parse("ping k1abc").actions[0]["call"], "K1ABC")
+        self.assertEqual(commands.parse("blah blah").actions, [])
+
+    def test_best_band_follows_what_you_hear_and_the_sun(self):
+        from uranus import bandadvisor
+        now = 1_795_000_000
+        sp = [{"time": now - 60 * i, "call": f"K{i}AA", "grid": "FN42", "freq_hz": 21_075_000, "direction": "rx"}
+              for i in range(6)]
+        r = bandadvisor.advise("GK03", spot_list=sp, sfi=150, kp=2, now=now, source="test")
+        self.assertEqual(r["ranked"][0]["band"], "15m")
+        self.assertIn("6 station(s)", r["ranked"][0]["reasons"][0])
+        day, night = bandadvisor.muf(150, 60, 2), bandadvisor.muf(150, -30, 2)
+        self.assertGreater(day, night)
+        self.assertGreater(bandadvisor.muf(200, 60, 2), bandadvisor.muf(70, 60, 2))
+        self.assertLess(bandadvisor.muf(150, 60, 8), day)
+        self.assertGreater(bandadvisor.sun_elevation(13.1, -59.6, 1_795_000_000 - 1_795_000_000 % 86400 + 16 * 3600), 40)
+
+    def test_signal_id_learns_per_frequency(self):
+        import tempfile
+        from uranus import siglib, sigint
+        path = os.path.join(tempfile.mkdtemp(), "siglib.json")
+        f = sigint.Finding("WEFAX", 0.7, 1900.0, 800.0, ["x"])
+        for _ in range(3):
+            siglib.teach(8.502, f, True, path=path)
+        g = [sigint.Finding("WEFAX", 0.7, 1900.0, 800.0, ["x"]), sigint.Finding("RTTY", 0.6, 1920.0, 170.0, ["y"])]
+        out = siglib.annotate(g, 8.502, path=path)
+        self.assertGreater(out[0].confidence, 0.7)
+        self.assertIn("usual here", out[0].reasons[0])
+        rtty = [x for x in out if x.name == "RTTY"][0]
+        self.assertTrue(rtty.new_here)
+        siglib.teach(8.502, rtty, False, "WEFAX", path=path)
+        self.assertLess(siglib.annotate([sigint.Finding("RTTY", 0.6, 1920.0, 170.0, [])], 8.502, path=path)[0]
+                        .confidence, 0.6)
+        self.assertEqual(siglib.usual(8.502, path=path)[0][0], "WEFAX")
+
+    def test_interference_doctor_spots_the_cure(self):
+        from uranus import doctor
+        fs, n = 12000, 10 * 12000
+        t = np.arange(n) / fs
+        rng = np.random.default_rng(1)
+        hum = doctor.measure(rng.normal(0, .02, n) + .05 * np.sin(2 * np.pi * 100 * t))
+        clean = doctor.measure(rng.normal(0, .02, n))
+        self.assertGreater(hum["hum_db"], 20)
+        self.assertEqual(clean["hum_db"], 0)
+        self.assertIn("hum", doctor.compare(hum, clean, "Laptop on battery"))
+        v = doctor.verdict({"baseline": hum, "battery": clean, "antenna": hum})
+        self.assertIn("Laptop on battery", v)
+
+    def test_station_health_offline(self):
+        from uranus import health
+        cfg = tomllib.loads(open("config/uranus.toml", encoding="utf-8").read())
+        res = health.check(cfg, cat=False, net=False, record=lambda sec, dev: np.full(36000, 1e-5))
+        names = {r[0]: r for r in res}
+        self.assertEqual(names["Callsign"][1], "fail")                  # N0CALL in the shipped settings
+        self.assertEqual(names["Receive audio"][1], "warn")              # very low audio
+        self.assertTrue(0 <= health.score(res) <= 100)
+
+    def test_smart_beacon_backs_off_on_a_dead_band(self):
+        from uranus import scheduler
+        self.assertEqual([scheduler.smart_every(a) for a in (0, 1, 2, 3, 9)], [3, 2, 2, 1, 1])
+        sp = [{"freq_hz": 14_075_000}, {"freq_hz": 14_076_000}, {"freq_hz": 144_490_000}]
+        self.assertEqual(scheduler.band_activity("20m", spot_list=sp), 2)
+
+    def test_network_paths_from_overheard_pings(self):
+        import tempfile
+        from uranus import mapgen, ping
+        d = tempfile.mkdtemp()
+        me = ping.PingAgent("8P5AB", "GK03", lambda t: None, 144.495e6, "PUMPKIN-15", None,
+                            os.path.join(d, "contacts.jsonl"))
+        me.handle({"type": "id", "call": "K1ABC", "grid": "FN42"})
+        me.handle({"type": "id", "call": "W9XYZ", "grid": "EN37"})
+        me.handle({"type": "message", "from": "W9XYZ", "text": "R-15K1ABC", "complete": True, "snr": -20})
+        net = ping.network(os.path.join(d, "paths.jsonl"))
+        self.assertEqual([(p["heard"], p["by"], p["snr"]) for p in net], [("K1ABC", "W9XYZ", -15)])
+        self.assertIn('"net": [{"a": "K1ABC"', mapgen.render([], "8P5AB", "GK03", net=net))
+
+    def test_wefax_autopilot_frequencies(self):
+        from uranus import wefax
+        self.assertEqual(wefax.pick("NMG", True), 17146.4)
+        self.assertEqual(wefax.pick("NMG", False), 4317.9)
+        self.assertEqual(wefax.next_frequency("NMG", 4317.9), 8503.9)
+        self.assertEqual(wefax.next_frequency("NMG", 17146.4), 4317.9)
+
 
 if __name__ == "__main__":
     unittest.main()

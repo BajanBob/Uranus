@@ -138,11 +138,19 @@ def demo_spots(now=None):
 from .worldmap import WORLD  # noqa: E402
 
 
-def render(stations, home_call, home_grid, title="Uranus station map", note="", online_min=30):
+def render(stations, home_call, home_grid, title="Uranus station map", note="", online_min=30, net=None):
     hl = geo.grid_to_latlon(home_grid)
+    netl = []
+    for p in net or []:                          # Uranus network: ping paths overheard between other stations
+        try:
+            a, b = geo.grid_to_latlon(p["heard_grid"]), geo.grid_to_latlon(p["by_grid"])
+        except (ValueError, KeyError, IndexError):
+            continue
+        netl.append({"a": p["heard"], "b": p["by"], "a_lat": a[0], "a_lon": a[1], "b_lat": b[0], "b_lon": b[1],
+                     "snr": p.get("snr"), "km": round(geo.distance_km(a, b))})
     summary = propagation.band_summary([s for s in stations if s["online"]] or stations)
     data = json.dumps({"home": {"call": home_call, "grid": home_grid, "lat": hl[0], "lon": hl[1]},
-                       "stations": stations, "online_min": online_min, "summary": summary,
+                       "stations": stations, "online_min": online_min, "summary": summary, "net": netl,
                        "modes": propagation.MODES,
                        "generated": time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime())})
     from .watermark import stamp_html
@@ -241,6 +249,7 @@ footer { padding: 8px 16px 18px; font: .72rem var(--mono); color: var(--muted); 
   <span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="currentColor" stroke-width="2"/></svg>we heard them</span>
   <span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="currentColor" stroke-width="2" stroke-dasharray="4 3"/></svg>they heard us</span>
   <span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="currentColor" stroke-width="4"/></svg>both ways</span>
+  <span><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="#8a3fd0" stroke-width="2" stroke-dasharray="2 6"/></svg>Uranus network: a ping path between two other stations</span>
 </div>
 <section class="bands" id="bands" aria-label="Propagation by band"></section>
 <div class="tbl">
@@ -392,6 +401,11 @@ footer { padding: 8px 16px 18px; font: .72rem var(--mono); color: var(--muted); 
     L.control.layers({ "Built-in world map": L.layerGroup(), "Street map (internet, Esri)": street }, null,
       { position: "topright" }).addTo(map);
     var pts = [[H.lat, H.lon]], markers = [];
+    (D.net || []).forEach(function (n) {
+      L.polyline([[n.a_lat, n.a_lon], [n.b_lat, n.b_lon]], { color: "#8a3fd0", weight: 2, opacity: .8, dashArray: "2 6" })
+        .addTo(map).bindTooltip(esc(n.b) + " hears " + esc(n.a) + " " + fmtSnr(n.snr) + " dB · " + n.km.toLocaleString() + " km");
+      pts.push([n.a_lat, n.a_lon]); pts.push([n.b_lat, n.b_lon]);
+    });
     S.forEach(function (s) {
       L.polyline([[H.lat, H.lon], [s.lat, s.lon]], { color: bandCol(s.band), weight: s.dirs.length > 1 ? 4 : 2, opacity: s.online ? .85 : .35,
         dashArray: s.dirs.length === 1 && s.dirs[0] === "heard" ? "6 5" : null }).addTo(map);
@@ -443,6 +457,10 @@ footer { padding: 8px 16px 18px; font: .72rem var(--mono); color: var(--muted); 
       if (labelGrid) el("text", { x: p[0], y: p[1] + 4, "text-anchor": "middle", "font-size": 11, fill: col("--grid") }, sq);
     }
     var h = P(H.lat, H.lon);
+    (D.net || []).forEach(function (n) {
+      var a = P(n.a_lat, n.a_lon), b = P(n.b_lat, n.b_lon);
+      el("line", { x1: a[0], y1: a[1], x2: b[0], y2: b[1], stroke: "#8a3fd0", "stroke-width": 2, "stroke-dasharray": "2 6", opacity: .8 });
+    });
     S.slice().reverse().forEach(function (s) {
       var q = P(s.lat, s.lon);
       el("line", { x1: h[0], y1: h[1], x2: q[0], y2: q[1], stroke: bandCol(s.band), "stroke-width": s.dirs.length > 1 ? 4 : 2, opacity: s.online ? .85 : .35,

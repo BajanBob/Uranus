@@ -357,7 +357,8 @@ def main(argv=None):
         os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
         with open(args.out, "w", encoding="utf-8") as f:
             f.write(mapgen.render(stations, st["callsign"], home, note=note,
-                                  online_min=rep_cfg.get("online_minutes", 30)))
+                                  online_min=rep_cfg.get("online_minutes", 30),
+                                  net=[] if args.demo else ping.network()))
         print(f"wrote {args.out}: {len(stations)} station(s)")
         if args.open:
             from .browser import open_html

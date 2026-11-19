@@ -252,6 +252,18 @@ sid.show(14.074, _si.identify(_x, dial_hz=14.074e6), -30.0)
 assert "Mains hum" in sid.status.cget("text") or "Mains hum" in sid.txt.get("1.0", "end")
 snap(sid, "10-signal-id.png")
 sid.destroy()
+mw = T.MissionWindow(a, "hurricane")
+assert "NMG" in mw.changes.cget("text")
+snap(mw, "11-mission.png")
+mw.destroy()
+assert T.apply_mission(a, "dx", open_tools=False) and g.load_cfg()["mission"]["name"] == "dx"
+assert "DX HUNT" in a.mission_lbl.cget("text")
+a.run_command("beacon wspr every 10 minutes overnight")
+assert g.load_cfg()["timetable"]["windows"][0] == "22:00-06:00 transmit 10"
+for W in (T.DoctorWindow, T.AccessWindow, T.FaxGallery):
+    w = W(a)
+    w.update()
+    w.destroy()
 sh = T.ShareWindow(a, "")
 assert "github.com/BajanBob/Uranus/releases" in T.SHARE_TEXT
 sh.destroy()

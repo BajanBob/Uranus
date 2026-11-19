@@ -311,6 +311,19 @@ class Runner:
             self.stop.wait(min(r, 0.5) if r > 0.05 else r)
 
 
+def smart_every(activity):
+    """Smart beacon: send on every tick when the band is busy, every 2nd when it is quiet, every 3rd when
+    nothing has been heard or reported in the last 30 minutes. activity = decodes + reports of us."""
+    return 1 if activity >= 3 else 2 if activity >= 1 else 3
+
+
+def band_activity(band, since_s=1800, spot_list=None):
+    """Decodes heard and reports of us on this band in the last half hour."""
+    from . import propagation, spots
+    lst = spot_list if spot_list is not None else spots.load(since_s=since_s)
+    return sum(1 for x in lst if propagation.band_of(x.get("freq_hz")) == band)
+
+
 class Session:
     """ON AIR. Without a timetable: the Runner transmits all the time, decoding in the gaps. With one
     (timetable.py): transmit windows send on their own N-minute grid (09:03, 09:06 ...) cycling through the
@@ -386,6 +399,19 @@ class Session:
             if self.stop.is_set():
                 return
             band, s = self._next_slot()
+            if s is not None and self.cfg.get("beacon", {}).get("smart") and i > 0:
+                try:
+                    act = band_activity(s.band)
+                except Exception:                  # noqa: BLE001
+                    act = 3
+                every = smart_every(act)
+                if i % every:
+                    log.info("smart beacon: %s quiet (%d heard in 30 min) - skipping this transmission, "
+                             "sending every %d", s.band, act, every)
+                    self._emit({"type": "smart_skip", "band": s.band, "activity": act, "every": every})
+                    nxt = tick_list[i + 1] if i + 1 < len(tick_list) else end
+                    r._gap(s, nxt - 5)
+                    continue
             if s is None:
                 log.error("every band has been stopped for high SWR - listening for the rest of this window")
                 self._emit({"type": "swr_stop"})
